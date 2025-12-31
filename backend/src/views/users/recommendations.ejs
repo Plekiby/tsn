@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <body>
+    <h2>Recommandations FOAF</h2>
+
+    <a href="/posts/feed">← Retour feed</a>
+
+    <form method="POST" action="/auth/logout" style="margin-top:10px;">
+      <button type="submit">Logout</button>
+    </form>
+
+    <hr />
+
+    <% if (!reco || reco.length === 0) { %>
+      <p>Aucune recommandation pour l’instant. Follow quelqu’un et reviens.</p>
+      <p><a href="/users/all">Voir tous les users</a></p>
+    <% } %>
+
+    <% (reco || []).forEach(u => { %>
+      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
+        <strong><%= u.displayName %></strong>
+        <div>mutuals: <%= u.mutuals %></div>
+        <form method="POST" action="/users/<%= u.id %>/follow">
+          <button type="submit">Follow / Unfollow</button>
+        </form>
+      </div>
+    <% }) %>
+  </body>
+</html>

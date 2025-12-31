@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <body>
+    <h2>All users (test follow)</h2>
+    <a href="/users/recommendations">← Reco FOAF</a>
+    <hr />
+    <% (users || []).forEach(u => { %>
+      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
+        <strong><%= u.displayName %></strong> — <%= u.email %>
+        <form method="POST" action="/users/<%= u.id %>/follow">
+          <button type="submit">Follow / Unfollow</button>
+        </form>
+      </div>
+    <% }) %>
+  </body>
+</html>

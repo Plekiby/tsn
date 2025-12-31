@@ -1,0 +1,37 @@
+{
+  "name": "tsn-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "prisma": "prisma"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Plekiby/tsn.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Plekiby/tsn/issues"
+  },
+  "homepage": "https://github.com/Plekiby/tsn#readme",
+  "dependencies": {
+    "@prisma/client": "^6.19.1",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.2.3",
+    "ejs": "^3.1.10",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.16.0",
+    "prisma": "^6.19.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}

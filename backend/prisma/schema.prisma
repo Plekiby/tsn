@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  createdAt    DateTime @default(now())
+
+  posts        Post[]
+
+  following    Follow[] @relation("Following")
+  followers    Follow[] @relation("Followers")
+
+  likes        Like[]
+}
+
+model Follow {
+  followerId Int
+  followedId Int
+  createdAt  DateTime @default(now())
+
+  follower   User @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  followed   User @relation("Followers", fields: [followedId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followedId])
+  @@index([followedId])
+}
+
+model Post {
+  id        Int      @id @default(autoincrement())
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  authorId  Int
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  likes     Like[]
+}
+
+model Like {
+  userId Int
+  postId Int
+  createdAt DateTime @default(now())
+
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+  @@index([postId])
+}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+  <body>
+    <h2>Feed</h2>
+
+    <form method="POST" action="/auth/logout">
+      <button type="submit">Logout</button>
+    </form>
+
+    <form method="POST" action="/posts">
+      <textarea name="content" rows="3" placeholder="Quoi de neuf ?"></textarea>
+      <button type="submit">Publier</button>
+    </form>
+
+    <hr />
+
+    <% if (!posts || posts.length === 0) { %>
+      <p>Aucun post.</p>
+    <% } %>
+
+    <% posts.forEach(p => { %>
+      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
+        <strong><%= p.author.displayName %></strong>
+        <div><%= p.content %></div>
+        <div>likes: <%= p.likes.length %></div>
+
+        <form method="POST" action="/posts/<%= p.id %>/like">
+          <button type="submit">Like / Unlike</button>
+        </form>
+      </div>
+    <% }) %>
+  </body>
+</html>
