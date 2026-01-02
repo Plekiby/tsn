@@ -14,14 +14,17 @@ model User {
   displayName  String
   createdAt    DateTime @default(now())
 
-  posts        Post[]
-
-  following    Follow[] @relation("Following")
-  followers    Follow[] @relation("Followers")
-
+  posts         Post[]
+  following     Follow[]       @relation("Following")
+  followers     Follow[]       @relation("Followers")
   userInterests UserInterest[]
+  likes         Like[]
 
-  likes        Like[]
+  friendRequestsSent     FriendRequest[] @relation("FR_From")
+  friendRequestsReceived FriendRequest[] @relation("FR_To")
+
+  friendshipsAsA Friendship[] @relation("FS_A")
+  friendshipsAsB Friendship[] @relation("FS_B")
 }
 
 model Follow {
@@ -29,11 +32,18 @@ model Follow {
   followedId Int
   createdAt  DateTime @default(now())
 
-  follower   User @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
-  followed   User @relation("Followers", fields: [followedId], references: [id], onDelete: Cascade)
+  follower User @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  followed User @relation("Followers", fields: [followedId], references: [id], onDelete: Cascade)
 
   @@id([followerId, followedId])
   @@index([followedId])
+}
+
+enum PostVisibility {
+  PUBLIC
+  FOLLOWERS
+  FRIENDS
+  PRIVATE
 }
 
 model Post {
@@ -41,27 +51,29 @@ model Post {
   content   String   @db.Text
   createdAt DateTime @default(now())
 
-  authorId  Int
-  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  visibility PostVisibility @default(PUBLIC)
 
-  likes     Like[]
+  authorId Int
+  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  likes Like[]
 }
 
 model Like {
-  userId Int
-  postId Int
+  userId    Int
+  postId    Int
   createdAt DateTime @default(now())
 
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@id([userId, postId])
   @@index([postId])
 }
 
 model Interest {
-  id    Int    @id @default(autoincrement())
-  name  String @unique
+  id   Int    @id @default(autoincrement())
+  name String @unique
 
   users UserInterest[]
 }
@@ -77,3 +89,28 @@ model UserInterest {
   @@index([interestId])
 }
 
+model FriendRequest {
+  id         Int      @id @default(autoincrement())
+  fromUserId Int
+  toUserId   Int
+  status     String   @default("PENDING") // PENDING | ACCEPTED | REJECTED
+  createdAt  DateTime @default(now())
+
+  fromUser User @relation("FR_From", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("FR_To", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId])
+  @@index([toUserId, status])
+}
+
+model Friendship {
+  userAId   Int
+  userBId   Int
+  createdAt DateTime @default(now())
+
+  userA User @relation("FS_A", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("FS_B", fields: [userBId], references: [id], onDelete: Cascade)
+
+  @@id([userAId, userBId])
+  @@index([userBId])
+}

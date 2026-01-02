@@ -3,12 +3,32 @@
   <body>
     <h2>Feed</h2>
 
+    <div style="margin-bottom:10px;">
+      <a href="/users/all">Users</a> |
+      <a href="/users/recommendations">Reco</a> |
+      <a href="/interests">Intérêts</a> |
+      <a href="/friends">Friends</a>
+    </div>
+
     <form method="POST" action="/auth/logout">
       <button type="submit">Logout</button>
     </form>
 
+    <hr />
+
     <form method="POST" action="/posts">
       <textarea name="content" rows="3" placeholder="Quoi de neuf ?"></textarea>
+
+      <div style="margin:8px 0;">
+        <label>Visibilité :</label>
+        <select name="visibility">
+          <option value="PUBLIC">PUBLIC</option>
+          <option value="FOLLOWERS">FOLLOWERS</option>
+          <option value="FRIENDS">FRIENDS</option>
+          <option value="PRIVATE">PRIVATE</option>
+        </select>
+      </div>
+
       <button type="submit">Publier</button>
     </form>
 
@@ -18,11 +38,17 @@
       <p>Aucun post.</p>
     <% } %>
 
-    <% posts.forEach(p => { %>
+    <% (posts || []).forEach(p => { %>
       <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
         <strong><%= p.author.displayName %></strong>
-        <div><%= p.content %></div>
-        <div>likes: <%= p.likes.length %></div>
+
+        <div style="font-size:12px; opacity:0.7;">
+          visibility: <%= p.visibility %>
+        </div>
+
+        <div style="margin-top:8px;"><%= p.content %></div>
+
+        <div style="margin-top:8px;">likes: <%= p.likes.length %></div>
 
         <form method="POST" action="/posts/<%= p.id %>/like">
           <button type="submit">Like / Unlike</button>

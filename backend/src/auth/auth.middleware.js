@@ -6,8 +6,8 @@ export function requireAuth(req, res, next) {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: payload.sub, email: payload.email };
-    next();
+    req.user = { id: Number(payload.sub), email: payload.email };
+    return next();
   } catch {
     return res.redirect("/auth/login");
   }
