@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <body>
+    <h2>Centres d’intérêt</h2>
+    <a href="/posts/feed">← Feed</a> | <a href="/users/recommendations">Reco FOAF</a>
+
+    <hr />
+
+    <h3>Créer un intérêt</h3>
+    <form method="POST" action="/interests">
+      <input name="name" placeholder="ex: football, IA, musique..." />
+      <button type="submit">Ajouter</button>
+    </form>
+
+    <hr />
+
+    <h3>Choisir mes intérêts (toggle)</h3>
+    <% interests.forEach(i => { %>
+      <div style="margin:8px 0; padding:8px; border:1px solid #ddd;">
+        <strong><%= i.name %></strong>
+        <% const selected = mySet.has(i.id); %>
+        <form method="POST" action="/interests/<%= i.id %>/toggle" style="display:inline;">
+          <button type="submit"><%= selected ? "Retirer" : "Ajouter" %></button>
+        </form>
+      </div>
+    <% }) %>
+  </body>
+</html>
