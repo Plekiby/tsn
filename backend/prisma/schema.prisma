@@ -19,7 +19,7 @@ model User {
   followers     Follow[]       @relation("Followers")
   userInterests UserInterest[]
   likes         Like[]
-
+  comments      Comment[]
   friendRequestsSent     FriendRequest[] @relation("FR_From")
   friendRequestsReceived FriendRequest[] @relation("FR_To")
 
@@ -52,6 +52,8 @@ model Post {
   createdAt DateTime @default(now())
 
   visibility PostVisibility @default(PUBLIC)
+
+  comments    Comment[]
 
   authorId Int
   author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
@@ -113,4 +115,21 @@ model Friendship {
 
   @@id([userAId, userBId])
   @@index([userBId])
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  content   String   @db.VarChar(1000)
+
+  postId    Int
+  userId    Int
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId, createdAt])
+  @@index([userId, createdAt])
 }

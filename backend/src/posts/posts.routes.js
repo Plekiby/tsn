@@ -39,7 +39,17 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
     take: 50,
     include: {
       author: { select: { id: true, displayName: true } },
-      likes: { select: { userId: true } }
+      likes: { select: { userId: true } },
+
+      // ✅ COMMENTS
+      comments: {
+        orderBy: { createdAt: "desc" },
+        take: 3,
+        include: {
+          user: { select: { id: true, displayName: true } }
+        }
+      },
+      _count: { select: { comments: true } }
     }
   });
 

@@ -53,6 +53,52 @@
         <form method="POST" action="/posts/<%= p.id %>/like">
           <button type="submit">Like / Unlike</button>
         </form>
+
+        <hr />
+
+        <div style="margin-top:8px;">
+          <div style="font-size:12px; opacity:0.7;">
+            commentaires: <%= p._count?.comments ?? 0 %>
+          </div>
+
+          <form method="POST" action="/posts/<%= p.id %>/comments" style="margin-top:6px;">
+            <input
+              type="text"
+              name="content"
+              maxlength="1000"
+              placeholder="Écrire un commentaire..."
+              style="width:100%; padding:6px;"
+              required
+            />
+            <button type="submit" style="margin-top:6px;">Commenter</button>
+          </form>
+
+          <% if (p.comments && p.comments.length > 0) { %>
+            <div style="margin-top:10px;">
+              <% p.comments.forEach(c => { %>
+                <div style="border-top:1px solid #eee; padding:6px 0;">
+                  <strong><%= c.user.displayName %></strong>
+                  <span style="font-size:12px; opacity:0.6;">
+                    • <%= new Date(c.createdAt).toLocaleString() %>
+                  </span>
+                  <div><%= c.content %></div>
+
+                  <% if (user && (user.id === c.userId || user.id === p.authorId)) { %>
+                    <form method="POST" action="/comments/<%= c.id %>/delete" style="display:inline;">
+                      <button type="submit">Supprimer</button>
+                    </form>
+                  <% } %>
+                </div>
+              <% }) %>
+            </div>
+
+            <% if ((p._count?.comments ?? 0) > p.comments.length) { %>
+              <div style="font-size:12px; opacity:0.6; margin-top:6px;">
+                + <%= (p._count.comments - p.comments.length) %> autres commentaires
+              </div>
+            <% } %>
+          <% } %>
+        </div>
       </div>
     <% }) %>
   </body>
