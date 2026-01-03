@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../prisma.js";
 import { requireAuth } from "../auth/auth.middleware.js";
+import { createNotification } from "../notifications/notifications.service.js";
 
 export const usersRouter = express.Router();
 
@@ -153,6 +154,11 @@ usersRouter.post("/:id/follow", requireAuth, async (req, res) => {
   try {
     await prisma.follow.create({
       data: { followerId: req.user.id, followedId: targetId }
+    });
+    await createNotification({
+      type: "FOLLOW",
+      toUserId: targetUserId,
+      fromUserId: req.user.id
     });
   } catch {
     await prisma.follow

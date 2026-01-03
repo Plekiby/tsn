@@ -1,6 +1,8 @@
 import express from "express";
 import { requireAuth } from "../auth/auth.middleware.js";
 import { prisma } from "../prisma.js";
+import { createNotification } from "../notifications/notifications.service.js";
+import { getUnreadCount } from "../notifications/notifications.service.js";
 
 export const postsRouter = express.Router();
 
@@ -140,7 +142,8 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
     .sort((a, b) => b.score - a.score)
     .slice(0, 50);
 
-  res.render("feed/index", { user: req.user, posts, debug });
+    const unreadCount = await getUnreadCount(req.user.id);
+res.render("feed/index", { user: req.user, posts, debug, unreadCount });
 });
 
 // Create post avec visibility
@@ -164,13 +167,26 @@ postsRouter.post("/", requireAuth, async (req, res) => {
   res.redirect("/posts/feed");
 });
 
-// Like/unlike
 postsRouter.post("/:id/like", requireAuth, async (req, res) => {
   const postId = Number(req.params.id);
   if (!Number.isFinite(postId)) return res.redirect("/posts/feed");
 
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+    select: { id: true, authorId: true }
+  });
+  if (!post) return res.redirect("/posts/feed");
+
   try {
     await prisma.like.create({ data: { userId: req.user.id, postId } });
+
+    await createNotification({
+      type: "LIKE",
+      toUserId: post.authorId,
+      fromUserId: req.user.id,
+      postId
+    });
+
   } catch {
     await prisma.like
       .delete({ where: { userId_postId: { userId: req.user.id, postId } } })
@@ -179,3 +195,4 @@ postsRouter.post("/:id/like", requireAuth, async (req, res) => {
 
   res.redirect("/posts/feed");
 });
+

@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+  <body>
+    <h2>Notifications</h2>
+
+    <div style="margin-bottom:10px;">
+      <a href="/posts/feed">Feed</a>
+    </div>
+
+    <form method="POST" action="/notifications/read-all">
+      <button type="submit">Tout marquer comme lu</button>
+    </form>
+
+    <hr />
+
+    <% if (!notifications || notifications.length === 0) { %>
+      <p>Aucune notification.</p>
+    <% } %>
+
+    <% (notifications || []).forEach(n => { %>
+      <div style="border:1px solid #ddd; padding:10px; margin:10px 0; background:<%= n.readAt ? '#fff' : '#f7f7ff' %>;">
+        <div style="font-size:12px; opacity:0.7;">
+          <%= new Date(n.createdAt).toLocaleString() %>
+          <% if (!n.readAt) { %> • <strong>NEW</strong><% } %>
+        </div>
+
+        <div style="margin-top:6px;">
+          <strong><%= n.type %></strong>
+          <% if (n.fromUser) { %> — <%= n.fromUser.displayName %><% } %>
+        </div>
+
+        <% if (n.post) { %>
+          <div style="margin-top:6px; font-size:12px; opacity:0.8;">
+            Post: <%= n.post.content.slice(0, 80) %>
+          </div>
+        <% } %>
+
+        <% if (n.comment) { %>
+          <div style="margin-top:6px;">
+            Comment: <%= n.comment.content %>
+          </div>
+        <% } %>
+      </div>
+    <% }) %>
+  </body>
+</html>

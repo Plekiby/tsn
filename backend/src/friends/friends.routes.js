@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../prisma.js";
 import { requireAuth } from "../auth/auth.middleware.js";
+import { createNotification } from "../notifications/notifications.service.js";
 
 export const friendsRouter = express.Router();
 
@@ -42,9 +43,19 @@ friendsRouter.post("/request/:id", requireAuth, async (req, res) => {
   if (!Number.isFinite(toUserId) || toUserId === req.user.id) return res.redirect(back);
   if (await areFriends(req.user.id, toUserId)) return res.redirect(back);
 
-  await prisma.friendRequest
-    .create({ data: { fromUserId: req.user.id, toUserId } })
-    .catch(() => {});
+  const fr = await prisma.friendRequest
+  .create({ data: { fromUserId: req.user.id, toUserId } })
+  .catch(() => null);
+
+if (fr) {
+  await createNotification({
+    type: "FRIEND_REQUEST",
+    toUserId,
+    fromUserId: req.user.id,
+    friendRequestId: fr.id
+  });
+}
+
 
   res.redirect(back);
 });
@@ -57,6 +68,12 @@ friendsRouter.post("/accept/:requestId", requireAuth, async (req, res) => {
   if (!fr || fr.toUserId !== req.user.id || fr.status !== "PENDING") return res.redirect("/friends");
 
   await prisma.friendRequest.update({ where: { id: requestId }, data: { status: "ACCEPTED" } });
+await createNotification({
+  type: "FRIEND_ACCEPTED",
+  toUserId: fr.fromUserId,
+  fromUserId: req.user.id,
+  friendRequestId: fr.id
+});
 
   const { userAId, userBId } = pair(fr.fromUserId, fr.toUserId);
   await prisma.friendship.create({ data: { userAId, userBId } }).catch(() => {});

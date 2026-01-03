@@ -1,6 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth/auth.middleware.js";
 import { prisma } from "../prisma.js";
+import { createNotification } from "../notifications/notifications.service.js";
 
 export const commentsRoutes = express.Router();
 
@@ -43,13 +44,22 @@ commentsRoutes.post("/posts/:postId/comments", requireAuth, async (req, res) => 
 
   if (!allowed) return res.status(403).send("Forbidden");
 
-  await prisma.comment.create({
-    data: {
-      content,
-      postId,
-      userId: req.user.id
+  const created = await prisma.comment.create({
+  data: {
+        content,
+        postId,
+        userId: req.user.id
     }
-  });
+    });
+
+    await createNotification({
+    type: "COMMENT",
+    toUserId: post.authorId,
+    fromUserId: req.user.id,
+    postId,
+    commentId: created.id
+    });
+
 
   return res.redirect("/posts/feed");
 });

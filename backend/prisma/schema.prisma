@@ -23,6 +23,10 @@ model User {
   friendRequestsSent     FriendRequest[] @relation("FR_From")
   friendRequestsReceived FriendRequest[] @relation("FR_To")
 
+  notificationsReceived Notification[] @relation("NotifTo")
+  notificationsSent     Notification[] @relation("NotifFrom")
+
+
   friendshipsAsA Friendship[] @relation("FS_A")
   friendshipsAsB Friendship[] @relation("FS_B")
 }
@@ -59,6 +63,8 @@ model Post {
   author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   likes Like[]
+
+  notifications Notification[]
 }
 
 model Like {
@@ -101,6 +107,8 @@ model FriendRequest {
   fromUser User @relation("FR_From", fields: [fromUserId], references: [id], onDelete: Cascade)
   toUser   User @relation("FR_To", fields: [toUserId], references: [id], onDelete: Cascade)
 
+  notifications Notification[]
+
   @@unique([fromUserId, toUserId])
   @@index([toUserId, status])
 }
@@ -112,7 +120,7 @@ model Friendship {
 
   userA User @relation("FS_A", fields: [userAId], references: [id], onDelete: Cascade)
   userB User @relation("FS_B", fields: [userBId], references: [id], onDelete: Cascade)
-
+  
   @@id([userAId, userBId])
   @@index([userBId])
 }
@@ -127,9 +135,44 @@ model Comment {
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  notifications Notification[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([postId, createdAt])
   @@index([userId, createdAt])
+}
+
+enum NotificationType {
+  LIKE
+  COMMENT
+  FRIEND_REQUEST
+  FRIEND_ACCEPTED
+  FOLLOW 
+}
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  type      NotificationType
+
+  toUserId   Int
+  fromUserId Int?
+
+  postId     Int?
+  commentId  Int?
+  friendRequestId Int?
+
+  createdAt DateTime @default(now())
+  readAt    DateTime?
+
+  toUser   User   @relation("NotifTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  fromUser User?  @relation("NotifFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
+
+  post     Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  comment  Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  friendRequest FriendRequest? @relation(fields: [friendRequestId], references: [id], onDelete: Cascade)
+
+  @@index([toUserId, createdAt])
+  @@index([toUserId, readAt])
 }
