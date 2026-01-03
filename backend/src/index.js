@@ -11,6 +11,7 @@ import { interestsRouter } from "./interests/interests.routes.js";
 import { friendsRouter } from "./friends/friends.routes.js";
 import { commentsRoutes } from "./comments/comments.routes.js";
 import { notificationsRouter } from "./notifications/notifications.routes.js";
+import { realtimeRouter } from "./realtime/realtime.routes.js";
 
 const app = express();
 app.use(express.urlencoded({ extended: true })); // forms
@@ -34,6 +35,7 @@ app.use("/users", usersRouter);
 app.use("/interests", interestsRouter);
 app.use("/friends", friendsRouter);
 app.use("/notifications", notificationsRouter);
+app.use(realtimeRouter);
 
 // ✅ COMMENTS ROUTES (IMPORTANT: avant 404)
 app.use(commentsRoutes);

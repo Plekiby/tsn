@@ -1,4 +1,5 @@
 import { prisma } from "../prisma.js";
+import { pushToUser } from "../realtime/sse.js";
 
 export async function createNotification({
   type,
@@ -8,10 +9,9 @@ export async function createNotification({
   commentId = null,
   friendRequestId = null
 }) {
-  // pas de notif à soi-même
   if (fromUserId && toUserId === fromUserId) return;
 
-  return prisma.notification.create({
+  const notif = await prisma.notification.create({
     data: {
       type,
       toUserId,
@@ -19,9 +19,23 @@ export async function createNotification({
       postId,
       commentId,
       friendRequestId
+    },
+    include: {
+      fromUser: { select: { id: true, displayName: true } }
     }
   });
+
+  // 🔥 PUSH TEMPS RÉEL
+  pushToUser(toUserId, {
+    id: notif.id,
+    type: notif.type,
+    fromUser: notif.fromUser,
+    createdAt: notif.createdAt
+  });
+
+  return notif;
 }
+
 
 export async function markAllRead(toUserId) {
   return prisma.notification.updateMany({

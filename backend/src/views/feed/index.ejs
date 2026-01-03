@@ -8,7 +8,13 @@
       <a href="/users/recommendations">Reco</a> |
       <a href="/interests">Intérêts</a> |
       <a href="/friends">Friends</a> | 
-      <a href="/notifications">Notifications (<%= unreadCount || 0 %>)</a> |
+      <a href="/notifications" id="notifLink">
+        Notifications
+        <span id="notifBadge"
+              style="display:inline-block; min-width:18px; padding:2px 6px; margin-left:4px; border-radius:999px; background:#111; color:#fff; font-size:12px; text-align:center;">
+          <%= unreadCount || 0 %>
+        </span>
+      </a> |
       <a href="/posts/feed">↻ Reload</a>
       <% if (debug) { %>
         <a href="/posts/feed">Debug: OFF</a>
@@ -129,3 +135,58 @@
     <% }) %>
   </body>
 </html>
+<script>
+  const es = new EventSource("/events");
+
+  es.onmessage = (e) => {
+    const notif = JSON.parse(e.data);
+    console.log("🔔 Notification reçue:", notif);
+
+    alert(
+      notif.fromUser
+        ? `${notif.fromUser.displayName} → ${notif.type}`
+        : `Notification: ${notif.type}`
+    );
+  };
+
+  es.addEventListener("ping", () => {
+    // keep alive
+  });
+
+  (function () {
+    const badge = document.getElementById("notifBadge");
+    const link = document.getElementById("notifLink");
+
+    function setBadge(n) {
+      const val = Number(n) || 0;
+      badge.textContent = val;
+      badge.style.visibility = val > 0 ? "visible" : "hidden";
+    }
+
+    // init (côté serveur)
+    setBadge(badge.textContent);
+
+    // SSE live updates
+    const es = new EventSource("/events");
+
+    es.onmessage = (e) => {
+      try {
+        const notif = JSON.parse(e.data);
+
+        // incrément simple: 1 notif = +1 unread
+        const current = Number(badge.textContent) || 0;
+        setBadge(current + 1);
+
+        // optionnel: petit feedback
+        // console.log("🔔 notif", notif);
+      } catch (err) {
+        // ignore
+      }
+    };
+
+    // quand tu cliques sur Notifications, on met à 0 côté UI (la page a un read-all)
+    link.addEventListener("click", () => {
+      setBadge(0);
+    });
+  })();
+</script>

@@ -142,8 +142,10 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
     .sort((a, b) => b.score - a.score)
     .slice(0, 50);
 
-    const unreadCount = await getUnreadCount(req.user.id);
-res.render("feed/index", { user: req.user, posts, debug, unreadCount });
+  const unreadCount = await prisma.notification.count({
+    where: { toUserId: req.user.id, readAt: null }
+  });
+  res.render("feed/index", { user: req.user, posts, debug, unreadCount });
 });
 
 // Create post avec visibility
