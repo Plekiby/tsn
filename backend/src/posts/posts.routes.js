@@ -37,6 +37,13 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
   });
   const myInterestSet = new Set(myInterests.map(x => x.interestId));
 
+  // 3.5) mes memberships de groupes (pour posts privés de groupes)
+  const memberships = await prisma.groupMember.findMany({
+  where: { userId: req.user.id },
+  select: { groupId: true }
+  });
+  const groupIds = memberships.map(m => m.groupId);
+
   // 4) where dynamique (privacy) pour éviter in:[]
   const whereOr = [{ authorId: meId }, { visibility: "PUBLIC" }];
 
@@ -46,6 +53,16 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
   if (friendIds.length > 0) {
     whereOr.push({ visibility: "FRIENDS", authorId: { in: friendIds } });
   }
+  if (groupIds.length > 0) {
+  whereOr.push({ groupId: { in: groupIds } });
+  }
+  if (groupIds.length > 0) {
+  whereOr.push({
+    group: {
+      id: { in: groupIds }
+    }
+  });
+  }
 
   // 5) récupérer les posts visibles + compteurs + derniers comments (pour affichage)
   const rawPosts = await prisma.post.findMany({
@@ -54,6 +71,7 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
     take: 80,
     include: {
       author: { select: { id: true, displayName: true } },
+      group: { select: { id: true, name: true } },
       likes: { select: { userId: true } },
       comments: {
         orderBy: { createdAt: "desc" },
@@ -96,6 +114,8 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
   function computeScoreDetails(p) {
     // relation score
     let relationScore = 0;
+    // group bonus (si post appartient à un groupe dont je suis membre)
+    const groupBonus = p.groupId && groupIds.includes(p.groupId) ? 20 : 0;
     if (p.authorId === meId) relationScore = 100;
     else if (friendsSet.has(p.authorId)) relationScore = 60;
     else if (followingSet.has(p.authorId)) relationScore = 30;
@@ -116,8 +136,7 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
 
     const privatePenalty = p.visibility === "PRIVATE" && p.authorId !== meId ? -9999 : 0;
 
-    const score =
-      relationScore + interestScore + freshnessScore + engagementScore + privatePenalty;
+    const score = relationScore + interestScore + freshnessScore + engagementScore + groupBonus +privatePenalty;
 
     return {
       score,
@@ -128,7 +147,8 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
       freshnessScore,
       likesCount,
       commentsCount,
-      engagementScore
+      engagementScore,
+      groupBonus
     };
   }
 

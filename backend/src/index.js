@@ -12,6 +12,10 @@ import { friendsRouter } from "./friends/friends.routes.js";
 import { commentsRoutes } from "./comments/comments.routes.js";
 import { notificationsRouter } from "./notifications/notifications.routes.js";
 import { realtimeRouter } from "./realtime/realtime.routes.js";
+import { groupsRouter } from "./groups/groups.routes.js";
+import { eventsRouter } from "./events/events.routes.js";
+import { groupInvitesRouter } from "./groupInvites/groupInvites.routes.js";
+import { groupInviteLinksRouter } from "./groupInvites/groupInviteLinks.routes.js";
 
 const app = express();
 app.use(express.urlencoded({ extended: true })); // forms
@@ -35,10 +39,12 @@ app.use("/users", usersRouter);
 app.use("/interests", interestsRouter);
 app.use("/friends", friendsRouter);
 app.use("/notifications", notificationsRouter);
+app.use("/groups", groupsRouter);
+app.use(eventsRouter);
 app.use(realtimeRouter);
-
-// ✅ COMMENTS ROUTES (IMPORTANT: avant 404)
 app.use(commentsRoutes);
+app.use(groupInvitesRouter);
+app.use(groupInviteLinksRouter);
 
 app.get("/feed", (req, res) => res.redirect("/posts/feed"));
 

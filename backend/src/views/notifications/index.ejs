@@ -13,6 +13,35 @@
 
     <hr />
 
+    <h3>Invitations de groupe</h3>
+
+    <% if (!groupInvites || groupInvites.length === 0) { %>
+      <p>Aucune invitation.</p>
+    <% } else { %>
+      <% groupInvites.forEach(inv => { %>
+        <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
+          <div>
+            <strong><%= inv.fromUser.displayName %></strong>
+            t’a invité dans le groupe
+            <strong><%= inv.group.name %></strong>
+          </div>
+
+          <div style="margin-top:8px;">
+            <form method="POST" action="/groups/invites/<%= inv.id %>/accept" style="display:inline;">
+              <button type="submit">Accepter</button>
+            </form>
+
+            <form method="POST" action="/groups/invites/<%= inv.id %>/refuse" style="display:inline; margin-left:8px;">
+              <button type="submit">Refuser</button>
+            </form>
+          </div>
+        </div>
+      <% }) %>
+    <% } %>
+
+    <hr />
+
+
     <% if (!notifications || notifications.length === 0) { %>
       <p>Aucune notification.</p>
     <% } %>

@@ -4,23 +4,40 @@ import { prisma } from "../prisma.js";
 
 export const notificationsRouter = express.Router();
 
-// GET /notifications
+/**
+ * GET /notifications
+ */
 notificationsRouter.get("/", requireAuth, async (req, res) => {
   const notifications = await prisma.notification.findMany({
     where: { toUserId: req.user.id },
     orderBy: { createdAt: "desc" },
-    take: 100,
     include: {
       fromUser: { select: { id: true, displayName: true } },
-      post: { select: { id: true, content: true } },
-      comment: { select: { id: true, content: true } }
+      post: true,
+      comment: true
     }
   });
 
-  res.render("notifications/index", { user: req.user, notifications });
+  // 🔥 INVITATIONS DE GROUPE
+  const groupInvites = await prisma.groupInvite.findMany({
+    where: { toUserId: req.user.id },
+    orderBy: { createdAt: "desc" },
+    include: {
+      group: true,
+      fromUser: { select: { id: true, displayName: true } }
+    }
+  });
+
+  res.render("notifications/index", {
+    user: req.user,
+    notifications,
+    groupInvites
+  });
 });
 
-// POST /notifications/read-all
+/**
+ * POST /notifications/read-all
+ */
 notificationsRouter.post("/read-all", requireAuth, async (req, res) => {
   await prisma.notification.updateMany({
     where: { toUserId: req.user.id, readAt: null },
