@@ -41,7 +41,7 @@
 
     <% (posts || []).forEach(p => { %>
       <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
-        <strong><%= p.author.displayName %></strong>
+        <strong><a href="/profiles/<%= p.authorId %>"><%= p.author.displayName %></a></strong>
 
         <div style="font-size:12px; opacity:0.7;">
           visibility: <%= p.visibility %>
@@ -104,7 +104,7 @@
             <div style="margin-top:10px;">
               <% p.comments.forEach(c => { %>
                 <div style="border-top:1px solid #eee; padding:6px 0;">
-                  <strong><%= c.user.displayName %></strong>
+                  <strong><a href="/profiles/<%= c.userId %>"><%= c.user.displayName %></a></strong>
                   <span style="font-size:12px; opacity:0.6;">
                     • <%= new Date(c.createdAt).toLocaleString() %>
                   </span>

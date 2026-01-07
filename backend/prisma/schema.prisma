@@ -14,6 +14,14 @@ model User {
   displayName  String
   createdAt    DateTime @default(now())
 
+  // Profile fields
+  avatar       String?  @db.VarChar(500)
+  banner       String?  @db.VarChar(500)
+  bio          String?  @db.VarChar(500)
+  location     String?  @db.VarChar(100)
+  website      String?  @db.VarChar(200)
+  dateOfBirth  DateTime?
+
   posts         Post[]
   following     Follow[]       @relation("Following")
   followers     Follow[]       @relation("Followers")
