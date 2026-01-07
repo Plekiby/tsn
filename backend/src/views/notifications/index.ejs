@@ -1,81 +1,134 @@
-<!doctype html>
-<html>
-  <body>
-    <%- include("../partials/topnav") %>
-    <h2>Notifications</h2>
+<%- include("../partials/header", { pageTitle: "Notifications", unreadCount, unreadMessages, user }) %>
 
-    <form method="POST" action="/notifications/read-all">
-      <button type="submit">Tout marquer comme lu</button>
-    </form>
+<div class="container my-4">
+  <div class="row">
+    <div class="col-12">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>
+          <i class="bi bi-bell"></i> Notifications
+        </h2>
+        <form method="POST" action="/notifications/read-all">
+          <button type="submit" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-check-all"></i> Tout marquer comme lu
+          </button>
+        </form>
+      </div>
 
-    <hr />
+      <hr class="mb-4">
 
-    <h3>Invitations de groupe</h3>
+      <!-- Invitations de groupe -->
+      <div class="mb-5">
+        <h3 class="h5 mb-3">
+          <i class="bi bi-envelope"></i> Invitations de groupe
+          <% if (groupInvites && groupInvites.length > 0) { %>
+            <span class="badge bg-primary"><%= groupInvites.length %></span>
+          <% } %>
+        </h3>
 
-    <% if (!groupInvites || groupInvites.length === 0) { %>
-      <p>Aucune invitation.</p>
-    <% } else { %>
-      <% groupInvites.forEach(inv => { %>
-        <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
-          <div>
-            <strong><%= inv.fromUser.displayName %></strong>
-            t’a invité dans le groupe
-            <strong><%= inv.group.name %></strong>
+        <% if (!groupInvites || groupInvites.length === 0) { %>
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> Aucune invitation.
           </div>
+        <% } else { %>
+          <div class="row g-3">
+            <% groupInvites.forEach(inv => { %>
+              <div class="col-12">
+                <div class="card">
+                  <div class="card-body">
+                    <p class="mb-2">
+                      <strong><%= inv.fromUser.displayName %></strong>
+                      t'a invité dans le groupe
+                      <strong><%= inv.group.name %></strong>
+                    </p>
+                    <small class="text-muted">
+                      <i class="bi bi-clock"></i> <%= new Date(inv.createdAt).toLocaleString() %>
+                    </small>
 
-          <div style="font-size:12px; opacity:0.7; margin-top:6px;">
-            <%= new Date(inv.createdAt).toLocaleString() %>
-          </div>
+                    <div class="d-flex gap-2 mt-3">
+                      <form method="POST" action="/groups/invites/<%= inv.id %>/accept">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                          <i class="bi bi-check-circle"></i> Accepter
+                        </button>
+                      </form>
 
-          <div style="margin-top:8px;">
-            <form method="POST" action="/groups/invites/<%= inv.id %>/accept" style="display:inline;">
-              <button type="submit">Accepter</button>
-            </form>
-
-            <form method="POST" action="/groups/invites/<%= inv.id %>/refuse" style="display:inline; margin-left:8px;">
-              <button type="submit">Refuser</button>
-            </form>
-          </div>
-        </div>
-      <% }) %>
-    <% } %>
-
-    <hr />
-
-    <% if (!notifications || notifications.length === 0) { %>
-      <p>Aucune notification.</p>
-    <% } %>
-
-    <% (notifications || []).forEach(n => { %>
-      <div style="border:1px solid #ddd; padding:10px; margin:10px 0; background:<%= n.readAt ? '#fff' : '#f7f7ff' %>;">
-        <div style="font-size:12px; opacity:0.7;">
-          <%= new Date(n.createdAt).toLocaleString() %>
-          <% if (!n.readAt) { %> • <strong>NEW</strong><% } %>
-        </div>
-
-        <% if (n.event) { %>
-          <div style="margin-top:6px; font-size:12px; opacity:0.8;">
-            Event: <%= n.event.title %>
-          </div>
-        <% } %>
-
-        <div style="margin-top:6px;">
-          <strong><%= n.type %></strong>
-          <% if (n.fromUser) { %> — <%= n.fromUser.displayName %><% } %>
-        </div>
-
-        <% if (n.post) { %>
-          <div style="margin-top:6px; font-size:12px; opacity:0.8;">
-            Post: <%= n.post.content.slice(0, 80) %>
-          </div>
-        <% } %>
-
-        <% if (n.comment) { %>
-          <div style="margin-top:6px;">
-            Comment: <%= n.comment.content %>
+                      <form method="POST" action="/groups/invites/<%= inv.id %>/refuse">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">
+                          <i class="bi bi-x-circle"></i> Refuser
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            <% }) %>
           </div>
         <% } %>
       </div>
-    <% }) %>
-  </body>
-</html>
+
+      <hr class="mb-4">
+
+      <!-- Notifications générales -->
+      <div>
+        <h3 class="h5 mb-3">
+          <i class="bi bi-list"></i> Toutes les notifications
+        </h3>
+
+        <% if (!notifications || notifications.length === 0) { %>
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> Aucune notification.
+          </div>
+        <% } else { %>
+          <div class="row g-3">
+            <% (notifications || []).forEach(n => { %>
+              <div class="col-12">
+                <div class="card <%= n.readAt ? '' : 'border-primary' %>" style="background-color: <%= n.readAt ? '#fff' : '#f0f8ff' %>;">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <span class="badge bg-<%= n.readAt ? 'secondary' : 'primary' %>">
+                          <%= n.type %>
+                        </span>
+                        <% if (!n.readAt) { %>
+                          <span class="badge bg-danger ms-1">NEW</span>
+                        <% } %>
+                      </div>
+                      <small class="text-muted">
+                        <i class="bi bi-clock"></i> <%= new Date(n.createdAt).toLocaleString() %>
+                      </small>
+                    </div>
+
+                    <% if (n.fromUser) { %>
+                      <p class="mb-1">
+                        <strong><%= n.fromUser.displayName %></strong>
+                      </p>
+                    <% } %>
+
+                    <% if (n.event) { %>
+                      <div class="small text-muted">
+                        <i class="bi bi-calendar-event"></i> Event: <%= n.event.title %>
+                      </div>
+                    <% } %>
+
+                    <% if (n.post) { %>
+                      <div class="small text-muted mt-1">
+                        <i class="bi bi-chat-square-text"></i> Post: <%= n.post.content.slice(0, 80) %>
+                      </div>
+                    <% } %>
+
+                    <% if (n.comment) { %>
+                      <div class="mt-2">
+                        <i class="bi bi-chat"></i> Comment: <%= n.comment.content %>
+                      </div>
+                    <% } %>
+                  </div>
+                </div>
+              </div>
+            <% }) %>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include("../partials/footer") %>

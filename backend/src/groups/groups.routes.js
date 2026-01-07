@@ -136,6 +136,34 @@ groupsRouter.get("/:id", requireAuth, async (req, res) => {
       })
     : [];
 
+  // Utilisateurs non-membres (pour invitations directes)
+  const nonMembers = member && (member.role === "OWNER" || member.role === "ADMIN")
+    ? await prisma.user.findMany({
+        where: {
+          AND: [
+            { id: { not: req.user.id } },
+            {
+              NOT: {
+                groupMembers: {
+                  some: { groupId }
+                }
+              }
+            },
+            {
+              NOT: {
+                groupInvitesReceived: {
+                  some: { groupId }
+                }
+              }
+            }
+          ]
+        },
+        select: { id: true, displayName: true, email: true },
+        take: 20,
+        orderBy: { displayName: "asc" }
+      })
+    : [];
+
     const unreadCount = await getUnreadCount(req.user.id);
 
   res.render("groups/show", {
@@ -145,7 +173,8 @@ groupsRouter.get("/:id", requireAuth, async (req, res) => {
     posts,
     events,
     inviteToken,
-    unreadCount
+    unreadCount,
+    nonMembers
   });
 });
 

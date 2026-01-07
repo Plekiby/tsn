@@ -1,69 +1,90 @@
-<!doctype html>
-<html>
-  <body>
-    <%- include("../partials/topnav", { unreadCount }) %>
-    <h2>Messages</h2>
+<%- include("../partials/header", { pageTitle: "Messages", unreadCount, unreadMessages, user }) %>
 
-    <hr />
+<div class="container my-4">
+  <div class="row">
+    <div class="col-12">
+      <h2 class="mb-4">
+        <i class="bi bi-chat-dots"></i> Messages
+      </h2>
 
-    <% if (!conversations || conversations.length === 0) { %>
-      <p>Aucune conversation. Démarrez une discussion depuis un profil utilisateur.</p>
-    <% } %>
+      <hr class="mb-4">
 
-    <% (conversations || []).forEach(conv => { %>
-      <div style="border:1px solid #ddd; padding:12px; margin:10px 0; background:#fff;">
-        <a href="/messages/<%= conv.id %>" style="text-decoration:none; color:inherit;">
-          <div style="display:flex; align-items:center; gap:10px;">
-            <% if (conv.isGroup) { %>
-              <div style="width:50px; height:50px; border-radius:50%; background:#667eea; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:bold;">
-                G
-              </div>
-              <div style="flex:1;">
-                <strong><%= conv.groupName %></strong>
-                <div style="font-size:12px; opacity:0.7;">Groupe</div>
-              </div>
-            <% } else { %>
-              <% const other = conv.otherMembers[0]; %>
-              <% if (other?.avatar) { %>
-                <img src="<%= other.avatar %>" style="width:50px; height:50px; border-radius:50%; object-fit:cover;" />
-              <% } else { %>
-                <div style="width:50px; height:50px; border-radius:50%; background:#ddd; display:flex; align-items:center; justify-content:center; font-weight:bold;">
-                  <%= other?.displayName?.charAt(0)?.toUpperCase() || '?' %>
-                </div>
-              <% } %>
-              <div style="flex:1;">
-                <strong><%= other?.displayName || 'Utilisateur inconnu' %></strong>
-                <% if (conv.lastMessage) { %>
-                  <div style="font-size:13px; opacity:0.7; margin-top:4px;">
-                    <%= conv.lastMessage.sender.displayName %>: <%= conv.lastMessage.content.substring(0, 50) %><%= conv.lastMessage.content.length > 50 ? '...' : '' %>
+      <% if (!conversations || conversations.length === 0) { %>
+        <div class="alert alert-info">
+          <i class="bi bi-info-circle"></i> Aucune conversation. Démarrez une discussion depuis un profil utilisateur.
+        </div>
+      <% } %>
+
+      <div class="row g-3">
+        <% (conversations || []).forEach(conv => { %>
+          <div class="col-12">
+            <div class="card">
+              <a href="/messages/<%= conv.id %>" class="text-decoration-none text-dark">
+                <div class="card-body">
+                  <div class="d-flex align-items-center">
+                    <!-- Avatar -->
+                    <div class="flex-shrink-0 me-3">
+                      <% if (conv.isGroup) { %>
+                        <div class="d-flex align-items-center justify-content-center bg-primary text-white rounded-circle" style="width: 50px; height: 50px; font-weight: bold;">
+                          <i class="bi bi-people-fill"></i>
+                        </div>
+                      <% } else { %>
+                        <% const other = conv.otherMembers[0]; %>
+                        <% if (other?.avatar) { %>
+                          <img src="<%= other.avatar %>" class="rounded-circle" style="width: 50px; height: 50px; object-fit: cover;" alt="Avatar">
+                        <% } else { %>
+                          <div class="d-flex align-items-center justify-content-center bg-secondary text-white rounded-circle fw-bold" style="width: 50px; height: 50px;">
+                            <%= other?.displayName?.charAt(0)?.toUpperCase() || '?' %>
+                          </div>
+                        <% } %>
+                      <% } %>
+                    </div>
+
+                    <!-- Content -->
+                    <div class="flex-grow-1">
+                      <% if (conv.isGroup) { %>
+                        <h5 class="mb-0"><%= conv.groupName %></h5>
+                        <small class="text-muted">Groupe</small>
+                      <% } else { %>
+                        <% const other = conv.otherMembers[0]; %>
+                        <h5 class="mb-0"><%= other?.displayName || 'Utilisateur inconnu' %></h5>
+                        <% if (conv.lastMessage) { %>
+                          <p class="text-muted small mb-0 mt-1">
+                            <%= conv.lastMessage.sender.displayName %>:
+                            <%= conv.lastMessage.content.substring(0, 50) %><%= conv.lastMessage.content.length > 50 ? '...' : '' %>
+                          </p>
+                        <% } %>
+                      <% } %>
+                    </div>
+
+                    <!-- Badge and date -->
+                    <div class="text-end">
+                      <% if (conv.unreadCount > 0) { %>
+                        <span class="badge messages-badge mb-2"><%= conv.unreadCount %></span>
+                      <% } %>
+                      <div class="small text-muted">
+                        <%= new Date(conv.updatedAt).toLocaleDateString() %>
+                      </div>
+                    </div>
                   </div>
-                <% } %>
-              </div>
-            <% } %>
-
-            <div style="text-align:right;">
-              <% if (conv.unreadCount > 0) { %>
-                <div style="background:#111; color:#fff; border-radius:999px; padding:2px 8px; font-size:12px; display:inline-block;">
-                  <%= conv.unreadCount %>
                 </div>
-              <% } %>
-              <div style="font-size:12px; opacity:0.6; margin-top:4px;">
-                <%= new Date(conv.updatedAt).toLocaleDateString() %>
-              </div>
+              </a>
             </div>
           </div>
-        </a>
+        <% }) %>
       </div>
-    <% }) %>
+    </div>
+  </div>
+</div>
 
-    <script>
-    (function() {
-      const badge = document.getElementById("messagesBadge");
-      if (badge) {
-        badge.textContent = "0";
-        badge.style.visibility = "hidden";
-      }
-    })();
-    </script>
-  </body>
-</html>
+<script>
+(function() {
+  const badge = document.getElementById("messagesBadge");
+  if (badge) {
+    badge.textContent = "0";
+    badge.style.visibility = "hidden";
+  }
+})();
+</script>
+
+<%- include("../partials/footer") %>

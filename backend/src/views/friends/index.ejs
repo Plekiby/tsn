@@ -1,42 +1,92 @@
-<!doctype html>
-<html>
-  <body>
-    <%- include("../partials/topnav") %>
+<%- include("../partials/header", { pageTitle: "Amis", unreadCount, unreadMessages, user }) %>
 
-    <h2>Friends</h2>
+<div class="container my-4">
+  <div class="row">
+    <div class="col-12">
+      <h2 class="mb-4">
+        <i class="bi bi-people-fill"></i> Amis
+      </h2>
 
-    <hr />
+      <hr class="mb-4">
 
-    <h3>Demandes reçues</h3>
-    <% if (!incoming || incoming.length === 0) { %>
-      <p>Aucune demande.</p>
-    <% } %>
+      <!-- Demandes reçues -->
+      <div class="mb-5">
+        <h3 class="h5 mb-3">
+          <i class="bi bi-person-plus"></i> Demandes reçues
+          <% if (incoming && incoming.length > 0) { %>
+            <span class="badge bg-primary"><%= incoming.length %></span>
+          <% } %>
+        </h3>
 
-    <% (incoming || []).forEach(r => { %>
-      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
-        <strong><%= r.fromUser.displayName %></strong>
+        <% if (!incoming || incoming.length === 0) { %>
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> Aucune demande en attente.
+          </div>
+        <% } else { %>
+          <div class="row g-3">
+            <% incoming.forEach(r => { %>
+              <div class="col-12 col-md-6 col-lg-4">
+                <div class="card">
+                  <div class="card-body">
+                    <h5 class="card-title">
+                      <i class="bi bi-person-circle"></i> <%= r.fromUser.displayName %>
+                    </h5>
+                    <div class="d-flex gap-2 mt-3">
+                      <form method="POST" action="/friends/accept/<%= r.id %>" class="flex-fill">
+                        <button type="submit" class="btn btn-primary btn-sm w-100">
+                          <i class="bi bi-check-circle"></i> Accepter
+                        </button>
+                      </form>
 
-        <form method="POST" action="/friends/accept/<%= r.id %>" style="display:inline;">
-          <button type="submit">Accepter</button>
-        </form>
-
-        <form method="POST" action="/friends/reject/<%= r.id %>" style="display:inline;">
-          <button type="submit">Refuser</button>
-        </form>
+                      <form method="POST" action="/friends/reject/<%= r.id %>" class="flex-fill">
+                        <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+                          <i class="bi bi-x-circle"></i> Refuser
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            <% }) %>
+          </div>
+        <% } %>
       </div>
-    <% }) %>
 
-    <hr />
+      <hr class="mb-4">
 
-    <h3>Mes amis</h3>
-    <% if (!friends || friends.length === 0) { %>
-      <p>Aucun ami.</p>
-    <% } %>
+      <!-- Mes amis -->
+      <div>
+        <h3 class="h5 mb-3">
+          <i class="bi bi-heart-fill"></i> Mes amis
+          <% if (friends && friends.length > 0) { %>
+            <span class="badge bg-secondary"><%= friends.length %></span>
+          <% } %>
+        </h3>
 
-    <% (friends || []).forEach(f => { %>
-      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
-        <strong><%= f.displayName %></strong>
+        <% if (!friends || friends.length === 0) { %>
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> Vous n'avez pas encore d'amis. Commencez à suivre des utilisateurs et envoyez des demandes d'amitié !
+          </div>
+        <% } else { %>
+          <div class="row g-3">
+            <% friends.forEach(f => { %>
+              <div class="col-12 col-md-6 col-lg-4">
+                <div class="card">
+                  <div class="card-body">
+                    <h5 class="card-title">
+                      <a href="/profiles/<%= f.id %>" class="link-primary text-decoration-none">
+                        <i class="bi bi-person-circle"></i> <%= f.displayName %>
+                      </a>
+                    </h5>
+                  </div>
+                </div>
+              </div>
+            <% }) %>
+          </div>
+        <% } %>
       </div>
-    <% }) %>
-  </body>
-</html>
+    </div>
+  </div>
+</div>
+
+<%- include("../partials/footer") %>
