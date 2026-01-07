@@ -55,5 +55,15 @@
         </a>
       </div>
     <% }) %>
+
+    <script>
+    (function() {
+      const badge = document.getElementById("messagesBadge");
+      if (badge) {
+        badge.textContent = "0";
+        badge.style.visibility = "hidden";
+      }
+    })();
+    </script>
   </body>
 </html>

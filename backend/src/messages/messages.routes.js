@@ -32,6 +32,11 @@ messagesRouter.get("/", requireAuth, async (req, res) => {
           },
           group: {
             select: { id: true, name: true }
+          },
+          _count: {
+            select: {
+              messages: true
+            }
           }
         }
       }
@@ -41,14 +46,20 @@ messagesRouter.get("/", requireAuth, async (req, res) => {
     }
   });
 
-  const conversations = convs.map(cm => {
+  const conversations = await Promise.all(convs.map(async cm => {
     const conv = cm.conversation;
     const otherMembers = conv.members.filter(m => m.userId !== req.user.id);
     const lastMsg = conv.messages[0];
 
-    const unreadCount = conv.messages.filter(m =>
-      m.createdAt > (cm.lastReadAt || new Date(0))
-    ).length;
+    const unreadCount = await prisma.message.count({
+      where: {
+        conversationId: conv.id,
+        senderId: { not: req.user.id },
+        createdAt: {
+          gt: cm.lastReadAt || new Date(0)
+        }
+      }
+    });
 
     return {
       id: conv.id,
@@ -59,7 +70,7 @@ messagesRouter.get("/", requireAuth, async (req, res) => {
       unreadCount,
       updatedAt: conv.updatedAt
     };
-  });
+  }));
 
   res.render("messages/index", { user: req.user, conversations });
 });

@@ -19,12 +19,14 @@ import { groupInvitesRouter } from "./groupInvites/groupInvites.routes.js";
 import { groupInviteLinksRouter } from "./groupInvites/groupInviteLinks.routes.js";
 import { messagesRouter } from "./messages/messages.routes.js";
 import { attachUnreadCount } from "./notifications/unread.middleware.js";
+import { attachUnreadMessages } from "./messages/unreadMessages.middleware.js";
 
 const app = express();
 app.use(express.urlencoded({ extended: true })); // forms
 app.use(express.json());
 app.use(cookieParser());
 app.use(attachUnreadCount);
+app.use(attachUnreadMessages);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
