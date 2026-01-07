@@ -119,6 +119,9 @@
             <form method="POST" action="/friends/request/<%= profile.id %>" style="display:inline;">
               <button type="submit">Ajouter en ami</button>
             </form>
+            <form method="POST" action="/messages/start/<%= profile.id %>" style="display:inline;">
+              <button type="submit">Envoyer un message</button>
+            </form>
           <% } %>
         </div>
 

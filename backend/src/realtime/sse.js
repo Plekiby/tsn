@@ -23,3 +23,7 @@ export function pushToUser(userId, payload) {
     res.write(data);
   }
 }
+
+export function broadcastMessage(userId, payload) {
+  pushToUser(userId, payload);
+}

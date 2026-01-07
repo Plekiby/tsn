@@ -17,6 +17,7 @@ import { groupsRouter } from "./groups/groups.routes.js";
 import { eventsRouter } from "./events/events.routes.js";
 import { groupInvitesRouter } from "./groupInvites/groupInvites.routes.js";
 import { groupInviteLinksRouter } from "./groupInvites/groupInviteLinks.routes.js";
+import { messagesRouter } from "./messages/messages.routes.js";
 import { attachUnreadCount } from "./notifications/unread.middleware.js";
 
 const app = express();
@@ -43,6 +44,7 @@ app.use("/profiles", profilesRouter);
 app.use("/interests", interestsRouter);
 app.use("/friends", friendsRouter);
 app.use("/notifications", notificationsRouter);
+app.use("/messages", messagesRouter);
 app.use("/groups", groupsRouter);
 app.use("/events", eventsRouter);
 app.use(eventsRouter);
