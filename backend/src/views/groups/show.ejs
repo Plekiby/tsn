@@ -1,23 +1,27 @@
 <!doctype html>
 <html>
-  <body>
+  <body>    
+    <%- include("../partials/topnav") %>
+
     <h2>Group: <%= group.name %></h2>
 
+    <% // ✅ CHANGE ICI si tu es en prod AlwaysData : %>
+    <% const baseUrl = "http://localhost:3000"; %>
     <% if (member && (member.role === "OWNER" || member.role === "ADMIN")) { %>
-        <form method="POST" action="/groups/<%= group.id %>/invite-link">
-            <button type="submit">Générer un lien d’invitation</button>
-        </form>
+      <form method="POST" action="/groups/<%= group.id %>/invite-link">
+        <button type="submit">Générer un lien d’invitation</button>
+      </form>
 
-        <% if (typeof inviteToken !== "undefined") { %>
-            <div style="margin-top:8px; font-size:12px;">
-            Lien :
-            <input
-                value="<%= 'http://localhost:3000/groups/invite/accept?token=' + inviteToken %>"
-                style="width:420px;"
-                readonly
-            />
-            </div>
-        <% } %>
+      <% if (inviteToken) { %>
+        <div style="margin-top:8px; font-size:12px;">
+          Lien :
+          <input
+            value="<%= baseUrl + '/groups/invite/accept?token=' + inviteToken %>"
+            style="width:520px;"
+            readonly
+          />
+        </div>
+      <% } %>
     <% } %>
 
     <div style="margin-bottom:10px;">
@@ -27,7 +31,7 @@
     </div>
 
     <div style="font-size:12px; opacity:0.7;">
-      owner: <%= group.owner.displayName %> • members: <%= group._count.members %>
+      privacy: <%= group.privacy %> • owner: <%= group.owner.displayName %> • members: <%= group._count.members %>
     </div>
 
     <% if (group.description) { %>
@@ -37,9 +41,14 @@
     <hr />
 
     <% if (!member) { %>
-      <form method="POST" action="/groups/<%= group.id %>/join">
-        <button type="submit">Join group</button>
-      </form>
+      <% if (group.privacy !== "SECRET") { %>
+        <form method="POST" action="/groups/<%= group.id %>/join">
+          <button type="submit">Join group</button>
+        </form>
+      <% } else { %>
+        <p style="opacity:0.7;">Groupe SECRET : accès uniquement via lien d’invitation.</p>
+      <% } %>
+
       <p style="opacity:0.7;">Tu dois rejoindre le groupe pour voir les posts & events.</p>
     <% } else { %>
       <div style="font-size:12px; opacity:0.7;">Role: <%= member.role %></div>
@@ -105,7 +114,6 @@
             <form method="POST" action="/events/<%= ev.id %>/rsvp" style="margin-top:8px;">
               <select name="status">
                 <option value="GOING">GOING</option>
-                <option value="INTERESTED">INTERESTED</option>
                 <option value="DECLINED">DECLINED</option>
               </select>
               <button type="submit">RSVP</button>
@@ -129,7 +137,9 @@
 
             <div style="margin-top:8px;"><%= p.content %></div>
 
-            <div style="margin-top:8px;">likes: <%= p._count.likes %> • comments: <%= p._count.comments %></div>
+            <div style="margin-top:8px;">
+              likes: <%= p._count.likes %> • comments: <%= p._count.comments %>
+            </div>
 
             <form method="POST" action="/posts/<%= p.id %>/like">
               <button type="submit">Like / Unlike</button>

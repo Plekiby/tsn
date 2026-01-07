@@ -1,13 +1,8 @@
 <!doctype html>
 <html>
   <body>
+    <%- include("../partials/topnav") %>
     <h2>Recommandations FOAF + intérêts</h2>
-
-    <div style="margin-bottom:10px;">
-      <a href="/posts/feed">← Feed</a> |
-      <a href="/users/all">All users</a> |
-      <a href="/interests">Mes intérêts</a>
-    </div>
 
     <form method="POST" action="/auth/logout" style="margin:10px 0;">
       <button type="submit">Logout</button>

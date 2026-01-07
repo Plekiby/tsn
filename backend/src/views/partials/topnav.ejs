@@ -1,0 +1,134 @@
+<div style="margin-bottom:10px;">
+  <a href="/posts/feed">Feed</a> |
+  <a href="/users/all">Users</a> |
+  <a href="/users/recommendations">Reco</a> |
+  <a href="/interests">Intérêts</a> |
+  <a href="/friends">Friends</a> |
+  <a href="/groups">Groups</a> |
+  <a href="/notifications" id="notifLink">
+    Notifications
+    <span id="notifBadge"
+          style="display:inline-block; min-width:18px; padding:2px 6px; margin-left:4px; border-radius:999px; background:#111; color:#fff; font-size:12px; text-align:center;">
+      <%= unreadCount || 0 %>
+    </span>
+  </a>
+</div>
+<!-- Toast container -->
+<div id="toastContainer"
+     style="position:fixed; right:16px; bottom:16px; z-index:9999; display:flex; flex-direction:column; gap:10px;">
+</div>
+
+<script>
+(function () {
+  if (window.__tsnSseStarted) return;
+  window.__tsnSseStarted = true;
+
+  const badge = document.getElementById("notifBadge");
+  const toastContainer = document.getElementById("toastContainer");
+
+  function setBadge(n) {
+    const val = Number(n) || 0;
+    if (badge) {
+      badge.textContent = val;
+      badge.style.visibility = val > 0 ? "visible" : "hidden";
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function notifLabel(n) {
+    const from = n.fromUser?.displayName ? `De ${n.fromUser.displayName}` : "";
+    switch (n.type) {
+      case "LIKE": return `❤️ Nouveau like. ${from}`;
+      case "COMMENT": return `💬 Nouveau commentaire. ${from}`;
+      case "FRIEND_REQUEST": return `👥 Nouvelle demande d’ami. ${from}`;
+      case "FRIEND_ACCEPTED": return `✅ Demande d’ami acceptée. ${from}`;
+      case "FOLLOW": return `➕ Nouveau follower. ${from}`;
+      case "GROUP_INVITE": return `📨 Invitation de groupe. ${from}`;
+      case "GROUP_JOIN": return `🚪 Quelqu’un a rejoint ton groupe. ${from}`;
+      case "EVENT_CREATED":
+        return `📅 Nouvel event créé${n.event?.title ? ` : ${n.event.title}` : ""}. ${from}`;
+      case "EVENT_RSVP":
+        return `🗓️ RSVP sur ton event. ${from}`;
+      default:
+        return `🔔 Nouvelle notification. ${from}`;
+    }
+  }
+
+  function toast(message, onClick) {
+    if (!toastContainer) return;
+
+    const el = document.createElement("div");
+    el.style.cssText =
+      "min-width:260px; max-width:360px; background:#111; color:#fff; " +
+      "padding:12px 14px; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,.2);" +
+      "font-size:13px; cursor:pointer; opacity:0; transform:translateY(10px);" +
+      "transition:opacity .15s ease, transform .15s ease;";
+    el.innerHTML = `<div style="font-weight:600; margin-bottom:4px;">Notification</div>
+                    <div style="opacity:.9">${escapeHtml(message)}</div>
+                    <div style="margin-top:8px; font-size:12px; opacity:.7">Clique pour ouvrir</div>`;
+
+    el.addEventListener("click", () => {
+      try { onClick?.(); } catch (_) {}
+      el.remove();
+    });
+
+    toastContainer.appendChild(el);
+
+    // animate in
+    requestAnimationFrame(() => {
+      el.style.opacity = "1";
+      el.style.transform = "translateY(0)";
+    });
+
+    // auto remove
+    setTimeout(() => {
+      el.style.opacity = "0";
+      el.style.transform = "translateY(10px)";
+      setTimeout(() => el.remove(), 180);
+    }, 4500);
+  }
+
+  // init badge (val serveur)
+  if (badge) setBadge(badge.textContent);
+
+  const es = new EventSource("/events");
+
+  es.addEventListener("ping", () => {});
+
+  es.onmessage = (e) => {
+    let n;
+    try { n = JSON.parse(e.data); } catch (_) { return; }
+    if (!n) return;
+
+    // ✅ badge = unreadCount réel si fourni
+    if (typeof n.unreadCount === "number") {
+      setBadge(n.unreadCount);
+    } else {
+      // fallback
+      const current = Number(badge?.textContent) || 0;
+      setBadge(current + 1);
+    }
+
+    // ✅ toast popup
+    const msg = notifLabel(n);
+
+    // navigation intelligente : si notif contient event.groupId -> aller au groupe
+    const goTo = () => {
+      if (n.event?.groupId) window.location.href = `/groups/${n.event.groupId}`;
+      else window.location.href = "/notifications";
+    };
+
+    toast(msg, goTo);
+  };
+
+})();
+</script>
+

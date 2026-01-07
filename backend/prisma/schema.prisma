@@ -164,6 +164,8 @@ enum NotificationType {
   FOLLOW
   GROUP_INVITE
   GROUP_JOIN
+  EVENT_CREATED
+  EVENT_RSVP
 }
 
 
@@ -187,6 +189,8 @@ model Notification {
   post     Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
   comment  Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
   friendRequest FriendRequest? @relation(fields: [friendRequestId], references: [id], onDelete: Cascade)
+  eventId Int?
+  event   Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([toUserId, createdAt])
   @@index([toUserId, readAt])
@@ -196,6 +200,11 @@ enum GroupPrivacy {
   PUBLIC
   PRIVATE
   SECRET
+}
+
+enum EventRSVP {
+  GOING
+  DECLINED
 }
  
 model Group {
@@ -251,6 +260,8 @@ model Event {
 
   attendees EventAttendee[]
 
+  notifications Notification[]
+
   @@index([groupId, startAt])
   @@index([creatorId, createdAt])
 }
@@ -258,7 +269,7 @@ model Event {
 model EventAttendee {
   eventId Int
   userId  Int
-  status  String   @default("GOING") // GOING | INTERESTED | DECLINED
+  status  EventRSVP @default(GOING)
   joinedAt DateTime @default(now())
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)

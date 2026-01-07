@@ -14,11 +14,12 @@ notificationsRouter.get("/", requireAuth, async (req, res) => {
     include: {
       fromUser: { select: { id: true, displayName: true } },
       post: true,
-      comment: true
+      comment: true,
+      event: true
     }
   });
 
-  // 🔥 INVITATIONS DE GROUPE
+  // Invitations "directes" (GroupInvite)
   const groupInvites = await prisma.groupInvite.findMany({
     where: { toUserId: req.user.id },
     orderBy: { createdAt: "desc" },

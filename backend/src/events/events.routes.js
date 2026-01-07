@@ -1,60 +1,42 @@
 import express from "express";
 import { requireAuth } from "../auth/auth.middleware.js";
 import { prisma } from "../prisma.js";
+import { createNotification } from "../notifications/notifications.service.js";
 
 export const eventsRouter = express.Router();
 
-async function isMember(groupId, userId) {
-  const gm = await prisma.groupMember.findUnique({
-    where: { groupId_userId: { groupId, userId } }
-  });
-  return !!gm;
-}
-
-eventsRouter.post("/groups/:groupId/events", requireAuth, async (req, res) => {
-  const groupId = Number(req.params.groupId);
-  const title = (req.body?.title || "").trim();
-  const description = (req.body?.description || "").trim();
-  const location = (req.body?.location || "").trim();
-  const startAt = req.body?.startAt ? new Date(req.body.startAt) : null;
-  const endAt = req.body?.endAt ? new Date(req.body.endAt) : null;
-
-  if (!Number.isFinite(groupId)) return res.redirect("/groups");
-  if (!title || !startAt || isNaN(startAt.getTime())) return res.redirect(`/groups/${groupId}`);
-
-  const member = await isMember(groupId, req.user.id);
-  if (!member) return res.status(403).send("Forbidden");
-
-  await prisma.event.create({
-    data: {
-      title,
-      description: description || null,
-      location: location || null,
-      startAt,
-      endAt: endAt && !isNaN(endAt.getTime()) ? endAt : null,
-      groupId,
-      creatorId: req.user.id
-    }
-  });
-
-  res.redirect(`/groups/${groupId}`);
-});
-
-eventsRouter.post("/events/:eventId/rsvp", requireAuth, async (req, res) => {
-  const eventId = Number(req.params.eventId);
+/**
+ * POST /events/:id/rsvp
+ * body: { status: GOING|DECLINED }
+ *
+ * Règles:
+ * - être membre du groupe de l'event
+ * - upsert EventAttendee
+ * - notif au creator: EVENT_RSVP (sauf si creator lui-même)
+ */
+eventsRouter.post("/:id/rsvp", requireAuth, async (req, res) => {
+  const eventId = Number(req.params.id);
   const status = String(req.body?.status || "GOING").toUpperCase();
-  const allowed = new Set(["GOING", "INTERESTED", "DECLINED"]);
+
+  const allowed = new Set(["GOING", "DECLINED"]);
   const safeStatus = allowed.has(status) ? status : "GOING";
 
-  if (!Number.isFinite(eventId)) return res.redirect("/groups");
+  if (!Number.isFinite(eventId)) return res.redirect("/posts/feed");
 
   const ev = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { id: true, groupId: true }
+    select: {
+      id: true,
+      groupId: true,
+      creatorId: true
+    }
   });
-  if (!ev) return res.redirect("/groups");
+  if (!ev) return res.redirect("/posts/feed");
 
-  const member = await isMember(ev.groupId, req.user.id);
+  // membership gate
+  const member = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId: ev.groupId, userId: req.user.id } }
+  });
   if (!member) return res.status(403).send("Forbidden");
 
   await prisma.eventAttendee.upsert({
@@ -62,6 +44,16 @@ eventsRouter.post("/events/:eventId/rsvp", requireAuth, async (req, res) => {
     update: { status: safeStatus },
     create: { eventId, userId: req.user.id, status: safeStatus }
   });
+
+  // notif au creator (si pas lui-même)
+  if (ev.creatorId !== req.user.id) {
+    await createNotification({
+      type: "EVENT_RSVP",
+      toUserId: ev.creatorId,
+      fromUserId: req.user.id,
+      eventId: ev.id
+    });
+  }
 
   res.redirect(`/groups/${ev.groupId}`);
 });

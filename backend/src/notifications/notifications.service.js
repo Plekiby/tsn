@@ -7,7 +7,8 @@ export async function createNotification({
   fromUserId = null,
   postId = null,
   commentId = null,
-  friendRequestId = null
+  friendRequestId = null,
+  eventId = null
 }) {
   if (fromUserId && toUserId === fromUserId) return;
 
@@ -18,24 +19,33 @@ export async function createNotification({
       fromUserId,
       postId,
       commentId,
-      friendRequestId
+      friendRequestId,
+      eventId
     },
     include: {
-      fromUser: { select: { id: true, displayName: true } }
+      fromUser: { select: { id: true, displayName: true } },
+      event: { select: { id: true, title: true, groupId: true } }
     }
   });
 
-  // 🔥 PUSH TEMPS RÉEL
+  const unreadCount = await prisma.notification.count({
+    where: { toUserId, readAt: null }
+  });
+
   pushToUser(toUserId, {
     id: notif.id,
     type: notif.type,
+    createdAt: notif.createdAt,
     fromUser: notif.fromUser,
-    createdAt: notif.createdAt
+    event: notif.event
+      ? { id: notif.event.id, title: notif.event.title, groupId: notif.event.groupId }
+      : null,
+    unreadCount
   });
+
 
   return notif;
 }
-
 
 export async function markAllRead(toUserId) {
   return prisma.notification.updateMany({

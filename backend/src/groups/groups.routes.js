@@ -1,10 +1,11 @@
 import express from "express";
 import { requireAuth } from "../auth/auth.middleware.js";
 import { prisma } from "../prisma.js";
+import { getUnreadCount } from "../notifications/notifications.service.js";
+import { createNotification } from "../notifications/notifications.service.js";
 
 export const groupsRouter = express.Router();
 
-/* utils */
 async function getMembership(groupId, userId) {
   return prisma.groupMember.findUnique({
     where: { groupId_userId: { groupId, userId } }
@@ -13,9 +14,9 @@ async function getMembership(groupId, userId) {
 
 /**
  * GET /groups
- * - PUBLIC visibles
- * - PRIVATE visibles seulement si membre
- * - SECRET jamais visibles
+ * - PUBLIC: visible pour tous
+ * - PRIVATE: visible seulement si membre
+ * - SECRET: jamais visible si non-membre
  */
 groupsRouter.get("/", requireAuth, async (req, res) => {
   const meId = req.user.id;
@@ -28,9 +29,11 @@ groupsRouter.get("/", requireAuth, async (req, res) => {
           privacy: "PRIVATE",
           members: { some: { userId: meId } }
         }
+        // SECRET: non listé si non membre
       ]
     },
     orderBy: { createdAt: "desc" },
+    take: 50,
     include: {
       owner: { select: { id: true, displayName: true } },
       _count: { select: { members: true } }
@@ -42,11 +45,7 @@ groupsRouter.get("/", requireAuth, async (req, res) => {
     include: { group: true }
   });
 
-  res.render("groups/index", {
-    user: req.user,
-    groups,
-    myMemberships
-  });
+  res.render("groups/index", { user: req.user, groups, myMemberships });
 });
 
 /**
@@ -56,7 +55,7 @@ groupsRouter.get("/", requireAuth, async (req, res) => {
 groupsRouter.post("/", requireAuth, async (req, res) => {
   const name = (req.body?.name || "").trim();
   const description = (req.body?.description || "").trim();
-  const privacy = (req.body?.privacy || "PUBLIC").toUpperCase();
+  const privacy = String(req.body?.privacy || "PUBLIC").toUpperCase();
 
   const allowed = new Set(["PUBLIC", "PRIVATE", "SECRET"]);
   const safePrivacy = allowed.has(privacy) ? privacy : "PUBLIC";
@@ -70,10 +69,7 @@ groupsRouter.post("/", requireAuth, async (req, res) => {
       privacy: safePrivacy,
       ownerId: req.user.id,
       members: {
-        create: {
-          userId: req.user.id,
-          role: "OWNER"
-        }
+        create: { userId: req.user.id, role: "OWNER" }
       }
     }
   });
@@ -83,8 +79,8 @@ groupsRouter.post("/", requireAuth, async (req, res) => {
 
 /**
  * GET /groups/:id
- * - PUBLIC: page visible
- * - PRIVATE / SECRET: membre only
+ * - PUBLIC: page visible (posts/events uniquement si membre)
+ * - PRIVATE/SECRET: accès uniquement si membre
  */
 groupsRouter.get("/:id", requireAuth, async (req, res) => {
   const groupId = Number(req.params.id);
@@ -101,13 +97,15 @@ groupsRouter.get("/:id", requireAuth, async (req, res) => {
 
   const member = await getMembership(groupId, req.user.id);
 
-  if (
-    (group.privacy === "PRIVATE" && !member) ||
-    (group.privacy === "SECRET" && !member)
-  ) {
+  // 🔒 access gate
+  if ((group.privacy === "PRIVATE" || group.privacy === "SECRET") && !member) {
     return res.redirect("/groups");
   }
 
+  // token affiché après génération (query param)
+  const inviteToken = req.query.inviteToken ? String(req.query.inviteToken) : undefined;
+
+  // posts/events visibles seulement si membre
   const posts = member
     ? await prisma.post.findMany({
         where: { groupId },
@@ -119,9 +117,7 @@ groupsRouter.get("/:id", requireAuth, async (req, res) => {
           comments: {
             orderBy: { createdAt: "desc" },
             take: 3,
-            include: {
-              user: { select: { id: true, displayName: true } }
-            }
+            include: { user: { select: { id: true, displayName: true } } }
           },
           _count: { select: { likes: true, comments: true } }
         }
@@ -132,6 +128,7 @@ groupsRouter.get("/:id", requireAuth, async (req, res) => {
     ? await prisma.event.findMany({
         where: { groupId },
         orderBy: { startAt: "asc" },
+        take: 30,
         include: {
           creator: { select: { id: true, displayName: true } },
           _count: { select: { attendees: true } }
@@ -139,18 +136,22 @@ groupsRouter.get("/:id", requireAuth, async (req, res) => {
       })
     : [];
 
+    const unreadCount = await getUnreadCount(req.user.id);
+
   res.render("groups/show", {
     user: req.user,
     group,
     member,
     posts,
-    events
+    events,
+    inviteToken,
+    unreadCount
   });
 });
 
 /**
  * POST /groups/:id/join
- * - SECRET interdit
+ * - interdit si SECRET (invite only)
  */
 groupsRouter.post("/:id/join", requireAuth, async (req, res) => {
   const groupId = Number(req.params.id);
@@ -165,13 +166,15 @@ groupsRouter.post("/:id/join", requireAuth, async (req, res) => {
 
   await prisma.groupMember
     .create({
-      data: {
-        groupId,
-        userId: req.user.id,
-        role: "MEMBER"
-      }
+      data: { groupId, userId: req.user.id, role: "MEMBER" }
     })
     .catch(() => {});
+
+  await createNotification({
+    type: "GROUP_JOIN",
+    toUserId: group.ownerId,     // notif owner
+    fromUserId: req.user.id
+  });
 
   res.redirect(`/groups/${groupId}`);
 });
@@ -184,13 +187,14 @@ groupsRouter.post("/:id/leave", requireAuth, async (req, res) => {
   if (!Number.isFinite(groupId)) return res.redirect("/groups");
 
   const member = await getMembership(groupId, req.user.id);
-  if (!member || member.role === "OWNER") {
-    return res.redirect(`/groups/${groupId}`);
-  }
+  if (!member) return res.redirect(`/groups/${groupId}`);
 
-  await prisma.groupMember.delete({
-    where: { groupId_userId: { groupId, userId: req.user.id } }
-  });
+  // owner ne leave pas (simple)
+  if (member.role === "OWNER") return res.redirect(`/groups/${groupId}`);
+
+  await prisma.groupMember
+    .delete({ where: { groupId_userId: { groupId, userId: req.user.id } } })
+    .catch(() => {});
 
   res.redirect("/groups");
 });
@@ -202,9 +206,8 @@ groupsRouter.post("/:id/posts", requireAuth, async (req, res) => {
   const groupId = Number(req.params.id);
   const content = (req.body?.content || "").trim();
 
-  if (!Number.isFinite(groupId) || !content) {
-    return res.redirect(`/groups/${groupId}`);
-  }
+  if (!Number.isFinite(groupId)) return res.redirect("/groups");
+  if (!content) return res.redirect(`/groups/${groupId}`);
 
   const member = await getMembership(groupId, req.user.id);
   if (!member) return res.status(403).send("Forbidden");
@@ -214,9 +217,81 @@ groupsRouter.post("/:id/posts", requireAuth, async (req, res) => {
       content,
       authorId: req.user.id,
       groupId,
+      // visibility pas vraiment utilisée pour groupe, on garde PUBLIC
       visibility: "PUBLIC"
     }
   });
 
   res.redirect(`/groups/${groupId}`);
 });
+
+/**
+ * POST /groups/:id/events
+ * Création event (membre only)
+ */
+groupsRouter.post("/:id/events", requireAuth, async (req, res) => {
+  const groupId = Number(req.params.id);
+  if (!Number.isFinite(groupId)) return res.redirect("/groups");
+
+  const title = (req.body?.title || "").trim();
+  const location = (req.body?.location || "").trim();
+  const description = (req.body?.description || "").trim();
+  const startAtRaw = String(req.body?.startAt || "");
+  const endAtRaw = String(req.body?.endAt || "");
+
+  if (!title || !startAtRaw) return res.redirect(`/groups/${groupId}`);
+
+  const member = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId: req.user.id } }
+  });
+  if (!member) return res.status(403).send("Forbidden");
+
+  const startAt = new Date(startAtRaw);
+  const endAt = endAtRaw ? new Date(endAtRaw) : null;
+
+  if (Number.isNaN(startAt.getTime())) return res.redirect(`/groups/${groupId}`);
+  if (endAt && Number.isNaN(endAt.getTime())) return res.redirect(`/groups/${groupId}`);
+
+  const ev = await prisma.event.create({
+    data: {
+      title,
+      location: location || null,
+      description: description || null,
+      startAt,
+      endAt,
+      groupId,
+      creatorId: req.user.id
+    }
+  });
+
+  // 🔔 Notif EVENT_CREATED à tous les membres du groupe (sauf créateur)
+  const members = await prisma.groupMember.findMany({
+    where: { groupId },
+    select: { userId: true }
+  });
+
+  const notifData = members
+    .filter(m => m.userId !== req.user.id)
+    .map(m => ({
+      type: "EVENT_CREATED",
+      toUserId: m.userId,
+      fromUserId: req.user.id,
+      eventId: ev.id
+    }));
+
+  if (notifData.length > 0) {
+    for (const m of members) {
+      if (m.userId === req.user.id) continue;
+
+      await createNotification({
+        type: "EVENT_CREATED",
+        toUserId: m.userId,
+        fromUserId: req.user.id,
+        eventId: ev.id
+      });
+    }
+  }
+
+  res.redirect(`/groups/${groupId}`);
+});
+

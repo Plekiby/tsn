@@ -1,11 +1,8 @@
 <!doctype html>
 <html>
   <body>
+    <%- include("../partials/topnav") %>
     <h2>Notifications</h2>
-
-    <div style="margin-bottom:10px;">
-      <a href="/posts/feed">Feed</a>
-    </div>
 
     <form method="POST" action="/notifications/read-all">
       <button type="submit">Tout marquer comme lu</button>
@@ -26,6 +23,10 @@
             <strong><%= inv.group.name %></strong>
           </div>
 
+          <div style="font-size:12px; opacity:0.7; margin-top:6px;">
+            <%= new Date(inv.createdAt).toLocaleString() %>
+          </div>
+
           <div style="margin-top:8px;">
             <form method="POST" action="/groups/invites/<%= inv.id %>/accept" style="display:inline;">
               <button type="submit">Accepter</button>
@@ -41,7 +42,6 @@
 
     <hr />
 
-
     <% if (!notifications || notifications.length === 0) { %>
       <p>Aucune notification.</p>
     <% } %>
@@ -52,6 +52,12 @@
           <%= new Date(n.createdAt).toLocaleString() %>
           <% if (!n.readAt) { %> • <strong>NEW</strong><% } %>
         </div>
+
+        <% if (n.event) { %>
+          <div style="margin-top:6px; font-size:12px; opacity:0.8;">
+            Event: <%= n.event.title %>
+          </div>
+        <% } %>
 
         <div style="margin-top:6px;">
           <strong><%= n.type %></strong>

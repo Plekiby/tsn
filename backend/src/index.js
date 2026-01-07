@@ -16,11 +16,13 @@ import { groupsRouter } from "./groups/groups.routes.js";
 import { eventsRouter } from "./events/events.routes.js";
 import { groupInvitesRouter } from "./groupInvites/groupInvites.routes.js";
 import { groupInviteLinksRouter } from "./groupInvites/groupInviteLinks.routes.js";
+import { attachUnreadCount } from "./notifications/unread.middleware.js";
 
 const app = express();
 app.use(express.urlencoded({ extended: true })); // forms
 app.use(express.json());
 app.use(cookieParser());
+app.use(attachUnreadCount);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,6 +42,7 @@ app.use("/interests", interestsRouter);
 app.use("/friends", friendsRouter);
 app.use("/notifications", notificationsRouter);
 app.use("/groups", groupsRouter);
+app.use("/events", eventsRouter);
 app.use(eventsRouter);
 app.use(realtimeRouter);
 app.use(commentsRoutes);
