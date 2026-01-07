@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+  <head>
+    <style>
+      .profile-banner {
+        width: 100%;
+        height: 200px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        object-fit: cover;
+      }
+      .profile-header {
+        position: relative;
+        margin-top: -60px;
+        padding: 0 20px;
+      }
+      .profile-avatar {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        border: 4px solid white;
+        object-fit: cover;
+        background: #f0f0f0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 48px;
+        color: #666;
+      }
+      .profile-info {
+        margin-top: 15px;
+      }
+      .profile-stats {
+        display: flex;
+        gap: 20px;
+        margin-top: 15px;
+        font-size: 14px;
+      }
+      .profile-stat {
+        display: flex;
+        flex-direction: column;
+      }
+      .profile-stat-value {
+        font-weight: bold;
+        font-size: 18px;
+      }
+      .profile-stat-label {
+        opacity: 0.7;
+      }
+      .profile-bio {
+        margin-top: 15px;
+        padding: 15px;
+        background: #f9f9f9;
+        border-radius: 8px;
+      }
+      .profile-details {
+        margin-top: 15px;
+        font-size: 14px;
+      }
+      .profile-detail-item {
+        margin: 8px 0;
+        opacity: 0.8;
+      }
+      .interests-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .interest-tag {
+        background: #e0e7ff;
+        color: #4338ca;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 13px;
+      }
+      .profile-actions {
+        margin-top: 15px;
+        display: flex;
+        gap: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <%- include("../partials/topnav", { unreadCount }) %>
+
+    <!-- Bannière -->
+    <% if (profile.banner) { %>
+      <img src="<%= profile.banner %>" alt="Banner" class="profile-banner" />
+    <% } else { %>
+      <div class="profile-banner"></div>
+    <% } %>
+
+    <div class="profile-header">
+      <!-- Avatar -->
+      <% if (profile.avatar) { %>
+        <img src="<%= profile.avatar %>" alt="Avatar" class="profile-avatar" />
+      <% } else { %>
+        <div class="profile-avatar">
+          <%= profile.displayName.charAt(0).toUpperCase() %>
+        </div>
+      <% } %>
+
+      <div class="profile-info">
+        <h2 style="margin:0;"><%= profile.displayName %></h2>
+        <div style="opacity:0.6; font-size:14px;">Membre depuis <%= new Date(profile.createdAt).toLocaleDateString() %></div>
+
+        <!-- Actions -->
+        <div class="profile-actions">
+          <% if (isOwnProfile) { %>
+            <a href="/profiles/<%= profile.id %>/edit">
+              <button>Éditer mon profil</button>
+            </a>
+          <% } else { %>
+            <form method="POST" action="/users/<%= profile.id %>/follow" style="display:inline;">
+              <button type="submit">
+                <%= isFollowing ? 'Ne plus suivre' : 'Suivre' %>
+              </button>
+            </form>
+            <form method="POST" action="/friends/request/<%= profile.id %>" style="display:inline;">
+              <button type="submit">Ajouter en ami</button>
+            </form>
+          <% } %>
+        </div>
+
+        <!-- Stats -->
+        <div class="profile-stats">
+          <div class="profile-stat">
+            <span class="profile-stat-value"><%= profile._count.posts %></span>
+            <span class="profile-stat-label">Posts</span>
+          </div>
+          <div class="profile-stat">
+            <span class="profile-stat-value"><%= profile._count.followers %></span>
+            <span class="profile-stat-label">Followers</span>
+          </div>
+          <div class="profile-stat">
+            <span class="profile-stat-value"><%= profile._count.following %></span>
+            <span class="profile-stat-label">Following</span>
+          </div>
+        </div>
+
+        <!-- Bio -->
+        <% if (profile.bio) { %>
+          <div class="profile-bio">
+            <%= profile.bio %>
+          </div>
+        <% } %>
+
+        <!-- Détails -->
+        <div class="profile-details">
+          <% if (profile.location) { %>
+            <div class="profile-detail-item">
+              📍 <%= profile.location %>
+            </div>
+          <% } %>
+          <% if (profile.website) { %>
+            <div class="profile-detail-item">
+              🔗 <a href="<%= profile.website %>" target="_blank" rel="noopener noreferrer"><%= profile.website %></a>
+            </div>
+          <% } %>
+          <% if (profile.dateOfBirth) { %>
+            <div class="profile-detail-item">
+              🎂 <%= new Date(profile.dateOfBirth).toLocaleDateString() %>
+            </div>
+          <% } %>
+        </div>
+
+        <!-- Intérêts -->
+        <% if (interests && interests.length > 0) { %>
+          <div style="margin-top:15px;">
+            <div style="font-weight:bold; margin-bottom:8px;">Intérêts</div>
+            <div class="interests-tags">
+              <% interests.forEach(interest => { %>
+                <span class="interest-tag"><%= interest %></span>
+              <% }) %>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    </div>
+
+    <hr style="margin-top:30px;" />
+
+    <div style="padding:20px;">
+      <h3>Publications récentes</h3>
+      <p style="opacity:0.6;">Les posts de <%= profile.displayName %> apparaîtront ici prochainement.</p>
+    </div>
+  </body>
+</html>
