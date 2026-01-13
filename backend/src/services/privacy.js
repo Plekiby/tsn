@@ -1,10 +1,13 @@
-// src/services/privacy.js
-export async function canViewPost(prisma, viewerId, post) {
-  // post doit contenir au minimum: userId, privacy
-  if (!post) return false;
-  if (post.userId === viewerId) return true;
+//////////
+// Vérifie si un utilisateur peut voir un post selon sa visibilité
+// Gère PUBLIC, PRIVATE, FOLLOWERS, FRIENDS
+// Retourne: Promise<boolean>
+//////////
+export async function peutVoirPublication(prisma, idUtilisateur, publication) {
+  if (!publication) return false;
+  if (publication.userId === idUtilisateur) return true;
 
-  switch (post.privacy) {
+  switch (publication.privacy) {
     case "PUBLIC":
       return true;
 
@@ -12,35 +15,38 @@ export async function canViewPost(prisma, viewerId, post) {
       return false;
 
     case "FOLLOWERS": {
-      const follow = await prisma.follow.findUnique({
+      const suivi = await prisma.follow.findUnique({
         where: {
           followerId_followingId: {
-            followerId: viewerId,
-            followingId: post.userId,
+            followerId: idUtilisateur,
+            followingId: publication.userId,
           },
         },
         select: { followerId: true },
       });
-      return !!follow;
+      return !!suivi;
     }
 
     case "FRIENDS": {
-      // adapte à TON schéma exact :
-      // si tu as une table Friendship (userAId, userBId) unique => check OR
-      // sinon si tu as Friendship + FriendRequest, check Friendship.
-      const friendship = await prisma.friendship.findFirst({
+      const ami = await prisma.friendship.findFirst({
         where: {
           OR: [
-            { userAId: viewerId, userBId: post.userId },
-            { userAId: post.userId, userBId: viewerId },
+            { userAId: idUtilisateur, userBId: publication.userId },
+            { userAId: publication.userId, userBId: idUtilisateur },
           ],
         },
         select: { id: true },
       });
-      return !!friendship;
+      return !!ami;
     }
 
     default:
       return false;
   }
 }
+
+
+
+
+
+

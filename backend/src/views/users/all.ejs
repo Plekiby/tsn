@@ -1,48 +1,270 @@
 <%- include("../partials/header", { pageTitle: "Tous les utilisateurs", unreadCount, unreadMessages, user }) %>
 
-<div class="container my-4">
+<div class="container-fluid my-4" style="max-width: 1400px;">
   <div class="row">
     <div class="col-12">
-      <h2 class="mb-4">
-        <i class="bi bi-people"></i> Tous les utilisateurs
-      </h2>
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">
+          <i class="bi bi-people"></i> Tous les utilisateurs
+        </h2>
+        <span class="badge bg-primary fs-6">
+          <%= total %> utilisateur<%= total > 1 ? 's' : '' %>
+        </span>
+      </div>
 
-      <hr class="mb-4">
+      <!-- Barre de recherche simple -->
+      <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body p-3">
+          <form method="GET" action="/users/all" class="d-flex gap-2">
+            <input
+              type="text"
+              class="form-control form-control-lg"
+              name="search"
+              placeholder="Rechercher un utilisateur..."
+              value="<%= search || '' %>"
+              autocomplete="off"
+            />
+            <button type="submit" class="btn btn-primary btn-lg">
+              <i class="bi bi-search"></i>
+            </button>
+            <% if (search) { %>
+              <a href="/users/all" class="btn btn-light btn-lg">
+                <i class="bi bi-x-lg"></i>
+              </a>
+            <% } %>
+          </form>
+          <% if (search) { %>
+            <small class="text-muted d-block mt-2">
+              <i class="bi bi-check-circle"></i> Résultats pour "<strong><%= search %></strong>"
+            </small>
+          <% } %>
+        </div>
+      </div>
 
-      <div class="row g-3">
-        <% (users || []).forEach(u => { %>
-          <div class="col-12 col-md-6 col-lg-4">
-            <div class="card h-100">
-              <div class="card-body">
-                <h5 class="card-title">
-                  <a href="/profiles/<%= u.id %>" class="link-primary text-decoration-none">
-                    <%= u.displayName %>
-                  </a>
-                </h5>
-                <p class="card-text text-muted small">
-                  <i class="bi bi-envelope"></i> <%= u.email %>
-                </p>
+      <% if (users.length === 0) { %>
+        <!-- Aucun résultat -->
+        <div class="alert alert-info">
+          <i class="bi bi-info-circle"></i>
+          <% if (search) { %>
+            Aucun utilisateur trouvé pour "<strong><%= search %></strong>".
+          <% } else { %>
+            Aucun utilisateur disponible.
+          <% } %>
+        </div>
+      <% } else { %>
+        <!-- Liste des utilisateurs -->
+        <div class="row g-3 mb-5">
+          <% users.forEach(u => { %>
+            <div class="col-12">
+              <div class="card border-0 shadow-sm h-100 user-card">
+                <div class="card-body">
+                  <div class="row g-0 align-items-start">
+                    <!-- Avatar et Infos principales -->
+                    <div class="col-auto">
+                      <% if (u.avatar) { %>
+                        <img
+                          src="<%= u.avatar %>"
+                          alt="<%= u.displayName %>"
+                          class="rounded-circle"
+                          width="80"
+                          height="80"
+                          style="object-fit: cover;"
+                        />
+                      <% } else { %>
+                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center"
+                             style="width: 80px; height: 80px; font-size: 2rem; font-weight: bold;">
+                          <%= u.displayName.charAt(0).toUpperCase() %>
+                        </div>
+                      <% } %>
+                    </div>
 
-                <div class="d-flex gap-2 mt-3">
-                  <form method="POST" action="/users/<%= u.id %>/follow" class="flex-fill">
-                    <button type="submit" class="btn btn-outline-primary btn-sm w-100">
-                      <i class="bi bi-person-plus"></i> Follow
-                    </button>
-                  </form>
+                    <!-- Contenu principal -->
+                    <div class="col ms-3 ms-md-4">
+                      <div class="row">
+                        <div class="col-md-6">
+                          <h5 class="mb-2">
+                            <a href="/profiles/<%= u.id %>" class="link-primary text-decoration-none">
+                              <%= u.displayName %>
+                            </a>
+                          </h5>
+                          <p class="text-muted small mb-3">
+                            <i class="bi bi-envelope"></i> <%= u.email %>
+                          </p>
 
-                  <form method="POST" action="/friends/request/<%= u.id %>" class="flex-fill">
-                    <button type="submit" class="btn btn-primary btn-sm w-100">
-                      <i class="bi bi-person-heart"></i> Ami
-                    </button>
-                  </form>
+                          <!-- Bio enrichie -->
+                          <% if (u.bio) { %>
+                            <p class="text-secondary mb-3" style="font-size: 0.95rem; line-height: 1.4;">
+                              <i class="bi bi-chat-left-text text-muted"></i>
+                              <%= u.bio.length > 150 ? u.bio.substring(0, 150) + '...' : u.bio %>
+                            </p>
+                          <% } %>
+                        </div>
+
+                        <!-- Intérêts communs et Statut -->
+                        <div class="col-md-6">
+                          <!-- Statut follow - TRÈS VISIBLE -->
+                          <div class="mb-3">
+                            <% if (u.isMutual) { %>
+                              <span class="badge bg-success fs-6 px-3 py-2">
+                                <i class="bi bi-arrow-left-right"></i> Amis
+                              </span>
+                            <% } else if (u.iFollow) { %>
+                              <span class="badge bg-primary fs-6 px-3 py-2">
+                                <i class="bi bi-check-circle"></i> Vous suivez
+                              </span>
+                            <% } else if (u.followsMe) { %>
+                              <span class="badge bg-info fs-6 px-3 py-2">
+                                <i class="bi bi-person-check"></i> Vous suit
+                              </span>
+                            <% } %>
+                          </div>
+
+                          <!-- Intérêts communs -->
+                          <% if (u.commonCount > 0) { %>
+                            <div class="mb-3">
+                              <div class="d-flex align-items-center gap-2 mb-2">
+                                <i class="bi bi-heart-fill text-danger"></i>
+                                <strong class="text-success"><%= u.commonCount %> intérêt<%= u.commonCount > 1 ? 's' : '' %> en commun</strong>
+                              </div>
+                              <div class="d-flex flex-wrap gap-2">
+                                <% u.commonInterests.slice(0, 3).forEach(interest => { %>
+                                  <span class="badge bg-success"><%= interest %></span>
+                                <% }) %>
+                                <% if (u.commonInterests.length > 3) { %>
+                                  <span class="badge bg-light text-dark">+<%= u.commonInterests.length - 3 %> autre<%= u.commonInterests.length - 3 > 1 ? 's' : '' %></span>
+                                <% } %>
+                              </div>
+                            </div>
+                          <% } %>
+
+                          <!-- Total intérêts -->
+                          <% if (u.totalInterests > 0) { %>
+                            <small class="text-muted">
+                              <i class="bi bi-tag"></i> <%= u.totalInterests %> intérêt<%= u.totalInterests > 1 ? 's' : '' %> au total
+                            </small>
+                          <% } %>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="col-12 col-md-auto mt-3 mt-md-0">
+                      <div class="d-flex gap-2 flex-wrap">
+                        <form method="POST" action="/users/<%= u.id %>/follow">
+                          <% if (u.iFollow) { %>
+                            <button type="submit" class="btn btn-outline-danger btn-sm">
+                              <i class="bi bi-person-dash"></i> Unfollow
+                            </button>
+                          <% } else { %>
+                            <button type="submit" class="btn btn-primary btn-sm">
+                              <i class="bi bi-person-plus"></i> Follow
+                            </button>
+                          <% } %>
+                        </form>
+
+                        <a href="/profiles/<%= u.id %>" class="btn btn-outline-secondary btn-sm">
+                          <i class="bi bi-eye"></i> Profil
+                        </a>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        <% }) %>
-      </div>
+          <% }) %>
+        </div>
+
+        <!-- Pagination classique -->
+        <% if (totalPages > 1) { %>
+          <nav aria-label="Pagination" class="mt-5">
+            <div class="d-flex justify-content-center align-items-center gap-2 flex-wrap">
+              <!-- Bouton Précédent -->
+              <% if (page === 1) { %>
+                <button class="btn btn-outline-secondary btn-sm" disabled>
+                  <i class="bi bi-chevron-left"></i> Précédent
+                </button>
+              <% } else { %>
+                <a class="btn btn-outline-secondary btn-sm" href="?page=<%= page - 1 %><%= search ? '&search=' + encodeURIComponent(search) : '' %>">
+                  <i class="bi bi-chevron-left"></i> Précédent
+                </a>
+              <% } %>
+
+              <!-- Numéros de page -->
+              <div class="btn-group" role="group">
+                <% for (let i = Math.max(1, page - 2); i <= Math.min(totalPages, page + 2); i++) { %>
+                  <% if (i === page) { %>
+                    <button type="button" class="btn btn-primary" disabled><strong><%= i %></strong></button>
+                  <% } else { %>
+                    <a href="?page=<%= i %><%= search ? '&search=' + encodeURIComponent(search) : '' %>" class="btn btn-outline-primary">
+                      <%= i %>
+                    </a>
+                  <% } %>
+                <% } %>
+              </div>
+
+              <!-- Bouton Suivant -->
+              <% if (page === totalPages) { %>
+                <button class="btn btn-outline-secondary btn-sm" disabled>
+                  Suivant <i class="bi bi-chevron-right"></i>
+                </button>
+              <% } else { %>
+                <a class="btn btn-outline-secondary btn-sm" href="?page=<%= page + 1 %><%= search ? '&search=' + encodeURIComponent(search) : '' %>">
+                  Suivant <i class="bi bi-chevron-right"></i>
+                </a>
+              <% } %>
+            </div>
+
+            <!-- Info pagination -->
+            <p class="text-center text-muted small mt-3">
+              <i class="bi bi-info-circle"></i>
+              Page <%= page %> / <%= totalPages %> 
+              (utilisateurs <%= (page - 1) * 30 + 1 %> à <%= Math.min(page * 30, total) %> sur <%= total %>)
+            </p>
+          </nav>
+        <% } %>
+      <% } %>
     </div>
   </div>
 </div>
+
+<style>
+  .user-card {
+    transition: all 0.3s ease;
+    border-left: 4px solid transparent;
+  }
+
+  .user-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12) !important;
+    border-left-color: #0d6efd;
+  }
+
+  .form-control-lg {
+    height: 48px;
+    font-size: 1.1rem;
+  }
+
+  .btn-lg {
+    height: 48px;
+    padding: 0.75rem 1.5rem;
+  }
+
+  /* Amélioration des badges */
+  .badge {
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .user-card .row {
+      flex-direction: column;
+    }
+
+    .user-card .col-md-6 {
+      margin-top: 1rem;
+    }
+  }
+</style>
 
 <%- include("../partials/footer") %>

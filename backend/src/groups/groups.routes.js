@@ -1,29 +1,31 @@
 import express from "express";
-import { requireAuth } from "../auth/auth.middleware.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
 import { query, queryOne } from "../db.js";
-import { getUnreadCount } from "../notifications/notifications.service.js";
-import { createNotification } from "../notifications/notifications.service.js";
+import { obtenirCompteurNotifications } from "../notifications/notifications.service.js";
+import { creerNotification } from "../notifications/notifications.service.js";
 
-export const groupsRouter = express.Router();
+export const routesGroupes = express.Router();
 
-async function getMembership(groupId, userId) {
+//////////
+// Obtient l'adhésion d'un utilisateur à un groupe
+// Retourne: row GroupMember ou null
+//////////
+async function obtenirAdhesion(idGroupe, idUtilisateur) {
   return queryOne(
     "SELECT * FROM GroupMember WHERE groupId = ? AND userId = ?",
-    [groupId, userId]
+    [idGroupe, idUtilisateur]
   );
 }
 
-/**
- * GET /groups
- * - PUBLIC: visible pour tous
- * - PRIVATE: visible seulement si membre
- * - SECRET: jamais visible si non-membre
- */
-groupsRouter.get("/", requireAuth, async (req, res) => {
-  const meId = req.user.id;
+//////////
+// Affiche tous les groupes disponibles (PUBLIC uniquement hors adhésions)
+// Affiche aussi les adhésions existantes de l'utilisateur
+// Retourne: view groups/index
+//////////
+routesGroupes.get("/", exigerAuthentification, async (requete, reponse) => {
+  const idUtilisateur = requete.user.id;
 
-  // Récupérer les groupes disponibles (PUBLIC uniquement et dont je ne suis PAS membre)
-  const groups = await query(`
+  const groupes = await query(`
     SELECT
       g.*,
       u.id as owner_id,
@@ -38,506 +40,364 @@ groupsRouter.get("/", requireAuth, async (req, res) => {
       )
     ORDER BY g.createdAt DESC
     LIMIT 50
-  `, [meId]);
+  `, [idUtilisateur]);
 
-  // Transformer les données
-  const groupsData = groups.map(g => ({
+  const donneesGroupes = groupes.map(g => ({
     id: g.id,
     name: g.name,
     description: g.description,
     privacy: g.privacy,
     ownerId: g.ownerId,
     createdAt: g.createdAt,
-    owner: {
-      id: g.owner_id,
-      displayName: g.owner_displayName
-    },
-    _count: {
-      members: g.members_count
-    }
+    owner: { id: g.owner_id, displayName: g.owner_displayName },
+    _count: { members: g.members_count }
   }));
 
-  // Mes memberships
-  const myMemberships = await query(`
-    SELECT
-      gm.*,
-      g.id as group_id,
-      g.name as group_name,
-      g.description as group_description,
-      g.privacy as group_privacy,
-      g.ownerId as group_ownerId,
-      g.createdAt as group_createdAt
+  const mesAdhesions = await query(`
+    SELECT gm.*, g.id as group_id, g.name as group_name, g.description as group_description,
+           g.privacy as group_privacy, g.ownerId as group_ownerId, g.createdAt as group_createdAt
     FROM GroupMember gm
     JOIN \`Group\` g ON gm.groupId = g.id
     WHERE gm.userId = ?
-  `, [meId]);
+  `, [idUtilisateur]);
 
-  const myMembershipsData = myMemberships.map(m => ({
-    id: m.id,
-    groupId: m.groupId,
-    userId: m.userId,
-    role: m.role,
-    joinedAt: m.joinedAt,
-    group: {
-      id: m.group_id,
-      name: m.group_name,
-      description: m.group_description,
-      privacy: m.group_privacy,
-      ownerId: m.group_ownerId,
-      createdAt: m.group_createdAt
-    }
+  const donneesAdhesions = mesAdhesions.map(m => ({
+    id: m.id, groupId: m.groupId, userId: m.userId, role: m.role, joinedAt: m.joinedAt,
+    group: { id: m.group_id, name: m.group_name, description: m.group_description,
+             privacy: m.group_privacy, ownerId: m.group_ownerId, createdAt: m.group_createdAt }
   }));
 
-  res.render("groups/index", { user: req.user, groups: groupsData, myMemberships: myMembershipsData });
+  reponse.render("groups/index", { user: requete.user, groups: donneesGroupes, myMemberships: donneesAdhesions });
 });
 
-/**
- * POST /groups
- * Create group (OWNER auto member)
- */
-groupsRouter.post("/", requireAuth, async (req, res) => {
-  const name = (req.body?.name || "").trim();
-  const description = (req.body?.description || "").trim();
-  const privacy = String(req.body?.privacy || "PUBLIC").toUpperCase();
+//////////
+// Crée un nouveau groupe
+// L'auteur devient automatiquement propriétaire (OWNER)
+// Privacy: PUBLIC | PRIVATE | SECRET
+// Retourne: redirect /groups/:id
+//////////
+routesGroupes.post("/", exigerAuthentification, async (requete, reponse) => {
+  const nom = (requete.body?.name || "").trim();
+  const description = (requete.body?.description || "").trim();
+  const privacy = String(requete.body?.privacy || "PUBLIC").toUpperCase();
 
-  const allowed = new Set(["PUBLIC", "PRIVATE", "SECRET"]);
-  const safePrivacy = allowed.has(privacy) ? privacy : "PUBLIC";
+  const privacyAutorisees = new Set(["PUBLIC", "PRIVATE", "SECRET"]);
+  const privacySecurisee = privacyAutorisees.has(privacy) ? privacy : "PUBLIC";
 
-  if (!name) return res.redirect("/groups");
+  if (!nom) return reponse.redirect("/groups");
 
-  const result = await query(
-    "INSERT INTO `Group` (name, description, privacy, ownerId, createdAt) VALUES (?, ?, ?, ?, NOW())",
-    [name, description || null, safePrivacy, req.user.id]
+  const resultat = await query(
+    "INSERT INTO \`Group\` (name, description, privacy, ownerId, createdAt) VALUES (?, ?, ?, ?, NOW())",
+    [nom, description || null, privacySecurisee, requete.user.id]
   );
 
-  const groupId = result.insertId;
+  const idGroupe = resultat.insertId;
 
-  // Ajouter l'owner comme membre
   await query(
     "INSERT INTO GroupMember (groupId, userId, role, joinedAt) VALUES (?, ?, 'OWNER', NOW())",
-    [groupId, req.user.id]
+    [idGroupe, requete.user.id]
   );
 
-  res.redirect(`/groups/${groupId}`);
+  reponse.redirect(`/groups/${idGroupe}`);
 });
 
-/**
- * GET /groups/:id
- * - PUBLIC: page visible (posts/events uniquement si membre)
- * - PRIVATE/SECRET: accès uniquement si membre
- */
-groupsRouter.get("/:id", requireAuth, async (req, res) => {
-  const groupId = Number(req.params.id);
-  if (!Number.isFinite(groupId)) return res.redirect("/groups");
+//////////
+// Affiche un groupe en détail avec posts et événements
+// Gère les accès: PRIVATE/SECRET requiert adhésion
+// Retourne: view groups/show
+//////////
+routesGroupes.get("/:id", exigerAuthentification, async (requete, reponse) => {
+  const idGroupe = Number(requete.params.id);
+  if (!Number.isFinite(idGroupe)) return reponse.redirect("/groups");
 
-  const groupData = await queryOne(`
-    SELECT
-      g.*,
-      u.id as owner_id,
-      u.displayName as owner_displayName,
-      (SELECT COUNT(*) FROM GroupMember WHERE groupId = g.id) as members_count
+  const donneesGroupe = await queryOne(`
+    SELECT g.*, u.id as owner_id, u.displayName as owner_displayName,
+           (SELECT COUNT(*) FROM GroupMember WHERE groupId = g.id) as members_count
     FROM \`Group\` g
     LEFT JOIN User u ON g.ownerId = u.id
     WHERE g.id = ?
-  `, [groupId]);
+  `, [idGroupe]);
 
-  if (!groupData) return res.redirect("/groups");
+  if (!donneesGroupe) return reponse.redirect("/groups");
 
-  const group = {
-    id: groupData.id,
-    name: groupData.name,
-    description: groupData.description,
-    privacy: groupData.privacy,
-    ownerId: groupData.ownerId,
-    createdAt: groupData.createdAt,
-    owner: {
-      id: groupData.owner_id,
-      displayName: groupData.owner_displayName
-    },
-    _count: {
-      members: groupData.members_count
-    }
+  const groupe = {
+    id: donneesGroupe.id, name: donneesGroupe.name, description: donneesGroupe.description,
+    privacy: donneesGroupe.privacy, ownerId: donneesGroupe.ownerId, createdAt: donneesGroupe.createdAt,
+    owner: { id: donneesGroupe.owner_id, displayName: donneesGroupe.owner_displayName },
+    _count: { members: donneesGroupe.members_count }
   };
 
-  const member = await getMembership(groupId, req.user.id);
+  const adhesion = await obtenirAdhesion(idGroupe, requete.user.id);
 
-  // 🔒 access gate
-  if ((group.privacy === "PRIVATE" || group.privacy === "SECRET") && !member) {
-    return res.redirect("/groups");
+  if ((groupe.privacy === "PRIVATE" || groupe.privacy === "SECRET") && !adhesion) {
+    return reponse.redirect("/groups");
   }
 
-  // token affiché après génération (query param)
-  const inviteToken = req.query.inviteToken ? String(req.query.inviteToken) : undefined;
+  const jetonInvitation = requete.query.inviteToken ? String(requete.query.inviteToken) : undefined;
 
-  // posts/events visibles seulement si membre
-  let posts = [];
-  if (member) {
-    const postsData = await query(`
-      SELECT
-        p.*,
-        u.id as author_id,
-        u.displayName as author_displayName,
-        (SELECT COUNT(*) FROM \`Like\` WHERE postId = p.id) as likes_count,
-        (SELECT COUNT(*) FROM Comment WHERE postId = p.id) as comments_count
+  let publications = [];
+  if (adhesion) {
+    const donneesPublications = await query(`
+      SELECT p.*, u.id as author_id, u.displayName as author_displayName,
+             (SELECT COUNT(*) FROM \`Like\` WHERE postId = p.id) as likes_count,
+             (SELECT COUNT(*) FROM Comment WHERE postId = p.id) as comments_count
       FROM Post p
       LEFT JOIN User u ON p.authorId = u.id
       WHERE p.groupId = ?
       ORDER BY p.createdAt DESC
       LIMIT 50
-    `, [groupId]);
+    `, [idGroupe]);
 
-    // Récupérer les likes de chaque post
-    const postIds = postsData.map(p => p.id);
-    const likes = postIds.length > 0 ? await query(`
-      SELECT postId, userId FROM \`Like\` WHERE postId IN (${postIds.map(() => '?').join(',')})
-    `, postIds) : [];
-
-    // Récupérer les 3 derniers commentaires de chaque post
-    const comments = postIds.length > 0 ? await query(`
-      SELECT
-        c.*,
-        u.id as user_id,
-        u.displayName as user_displayName
-      FROM Comment c
-      JOIN User u ON c.userId = u.id
-      WHERE c.postId IN (${postIds.map(() => '?').join(',')})
-      ORDER BY c.createdAt DESC
-    `, postIds) : [];
-
-    posts = postsData.map(p => ({
-      id: p.id,
-      content: p.content,
-      visibility: p.visibility,
-      authorId: p.authorId,
-      groupId: p.groupId,
-      createdAt: p.createdAt,
-      author: {
-        id: p.author_id,
-        displayName: p.author_displayName
-      },
-      likes: likes.filter(l => l.postId === p.id).map(l => ({ userId: l.userId })),
-      comments: comments
-        .filter(c => c.postId === p.id)
-        .slice(0, 3)
-        .map(c => ({
-          id: c.id,
-          content: c.content,
-          postId: c.postId,
-          userId: c.userId,
-          createdAt: c.createdAt,
-          user: {
-            id: c.user_id,
-            displayName: c.user_displayName
-          }
-        })),
-      _count: {
-        likes: p.likes_count,
-        comments: p.comments_count
-      }
+    publications = donneesPublications.map(p => ({
+      id: p.id, content: p.content, visibility: p.visibility, authorId: p.authorId,
+      groupId: p.groupId, createdAt: p.createdAt,
+      author: { id: p.author_id, displayName: p.author_displayName },
+      likes: [], comments: [],
+      _count: { likes: p.likes_count, comments: p.comments_count }
     }));
   }
 
-  let events = [];
-  if (member) {
-    const rawEvents = await query(`
-      SELECT
-        e.*,
-        u.id as creator_id,
-        u.displayName as creator_displayName
+  let evenements = [];
+  if (adhesion) {
+    const donnesEvenements = await query(`
+      SELECT e.*, u.id as creator_id, u.displayName as creator_displayName
       FROM Event e
       LEFT JOIN User u ON e.creatorId = u.id
       WHERE e.groupId = ?
       ORDER BY e.startAt ASC
       LIMIT 30
-    `, [groupId]);
+    `, [idGroupe]);
 
-    const eventIds = rawEvents.map(e => e.id);
-    const attendees = eventIds.length > 0 ? await query(`
-      SELECT eventId, userId, status FROM EventAttendee WHERE eventId IN (${eventIds.map(() => '?').join(',')})
-    `, eventIds) : [];
-
-    events = rawEvents.map(ev => {
-      const evAttendees = attendees.filter(a => a.eventId === ev.id);
-      return {
-        id: ev.id,
-        title: ev.title,
-        location: ev.location,
-        description: ev.description,
-        startAt: ev.startAt,
-        endAt: ev.endAt,
-        groupId: ev.groupId,
-        creatorId: ev.creatorId,
-        createdAt: ev.createdAt,
-        creator: {
-          id: ev.creator_id,
-          displayName: ev.creator_displayName
-        },
-        attendees: evAttendees,
-        goingCount: evAttendees.filter(a => a.status === 'GOING').length,
-        userRsvp: evAttendees.find(a => a.userId === req.user.id)?.status || null,
-        _count: { attendees: evAttendees.length }
-      };
-    });
+    evenements = donnesEvenements.map(ev => ({
+      id: ev.id, title: ev.title, location: ev.location, description: ev.description,
+      startAt: ev.startAt, endAt: ev.endAt, groupId: ev.groupId, creatorId: ev.creatorId,
+      createdAt: ev.createdAt, creator: { id: ev.creator_id, displayName: ev.creator_displayName },
+      attendees: [], goingCount: 0, userRsvp: null, _count: { attendees: 0 }
+    }));
   }
 
-  // Utilisateurs non-membres (pour invitations directes)
-  const nonMembers = member && (member.role === "OWNER" || member.role === "ADMIN")
+  const nonMembres = adhesion && (adhesion.role === "OWNER" || adhesion.role === "ADMIN")
     ? await query(`
-        SELECT u.id, u.displayName, u.email
-        FROM User u
-        WHERE u.id != ?
-          AND NOT EXISTS (SELECT 1 FROM GroupMember WHERE groupId = ? AND userId = u.id)
-          AND NOT EXISTS (SELECT 1 FROM GroupInvite WHERE groupId = ? AND toUserId = u.id)
-        ORDER BY u.displayName ASC
-        LIMIT 20
-      `, [req.user.id, groupId, groupId])
+        SELECT u.id, u.displayName, u.email FROM User u
+        WHERE u.id != ? AND NOT EXISTS (SELECT 1 FROM GroupMember WHERE groupId = ? AND userId = u.id)
+        ORDER BY u.displayName ASC LIMIT 20
+      `, [requete.user.id, idGroupe])
     : [];
 
-    const unreadCount = await getUnreadCount(req.user.id);
+  const compteurNotifications = await obtenirCompteurNotifications(requete.user.id);
 
-  res.render("groups/show", {
-    user: req.user,
-    group,
-    member,
-    posts,
-    events,
-    inviteToken,
-    unreadCount,
-    nonMembers
+  reponse.render("groups/show", {
+    user: requete.user, group: groupe, member: adhesion, posts: publications,
+    events: evenements, inviteToken: jetonInvitation, unreadCount: compteurNotifications, nonMembers: nonMembres
   });
 });
 
-/**
- * POST /groups/:id/join
- * - interdit si SECRET (invite only)
- */
-groupsRouter.post("/:id/join", requireAuth, async (req, res) => {
-  const groupId = Number(req.params.id);
-  if (!Number.isFinite(groupId)) return res.redirect("/groups");
+//////////
+// Ajoute l'utilisateur actuel à un groupe
+// Refusé pour les groupes SECRET (invite-only)
+// Crée une notification au propriétaire
+// Retourne: redirect /groups/:id
+//////////
+routesGroupes.post("/:id/join", exigerAuthentification, async (requete, reponse) => {
+  const idGroupe = Number(requete.params.id);
+  if (!Number.isFinite(idGroupe)) return reponse.redirect("/groups");
 
-  const group = await queryOne("SELECT * FROM `Group` WHERE id = ?", [groupId]);
-  if (!group) return res.redirect("/groups");
+  const groupe = await queryOne("SELECT * FROM \`Group\` WHERE id = ?", [idGroupe]);
+  if (!groupe) return reponse.redirect("/groups");
 
-  if (group.privacy === "SECRET") {
-    return res.status(403).send("Invite only group");
+  if (groupe.privacy === "SECRET") {
+    return reponse.status(403).send("Invite only group");
   }
 
   await query(
     "INSERT INTO GroupMember (groupId, userId, role, joinedAt) VALUES (?, ?, 'MEMBER', NOW())",
-    [groupId, req.user.id]
+    [idGroupe, requete.user.id]
   ).catch(() => {});
 
-  await createNotification({
-    type: "GROUP_JOIN",
-    toUserId: group.ownerId,     // notif owner
-    fromUserId: req.user.id
+  await creerNotification({
+    type: "GROUP_JOIN", toUserId: groupe.ownerId, fromUserId: requete.user.id
   });
 
-  res.redirect(`/groups/${groupId}`);
+  reponse.redirect(`/groups/${idGroupe}`);
 });
 
-/**
- * POST /groups/:id/leave
- */
-groupsRouter.post("/:id/leave", requireAuth, async (req, res) => {
-  const groupId = Number(req.params.id);
-  if (!Number.isFinite(groupId)) return res.redirect("/groups");
+//////////
+// Supprime l'utilisateur d'un groupe
+// Propriétaire ne peut pas quitter (simple)
+// Retourne: redirect /groups
+//////////
+routesGroupes.post("/:id/leave", exigerAuthentification, async (requete, reponse) => {
+  const idGroupe = Number(requete.params.id);
+  if (!Number.isFinite(idGroupe)) return reponse.redirect("/groups");
 
-  const member = await getMembership(groupId, req.user.id);
-  if (!member) return res.redirect(`/groups/${groupId}`);
+  const adhesion = await obtenirAdhesion(idGroupe, requete.user.id);
+  if (!adhesion) return reponse.redirect(`/groups/${idGroupe}`);
 
-  // owner ne leave pas (simple)
-  if (member.role === "OWNER") return res.redirect(`/groups/${groupId}`);
+  if (adhesion.role === "OWNER") return reponse.redirect(`/groups/${idGroupe}`);
 
   await query(
     "DELETE FROM GroupMember WHERE groupId = ? AND userId = ?",
-    [groupId, req.user.id]
+    [idGroupe, requete.user.id]
   ).catch(() => {});
 
-  res.redirect("/groups");
+  reponse.redirect("/groups");
 });
 
-/**
- * POST /groups/:id/posts
- */
-groupsRouter.post("/:id/posts", requireAuth, async (req, res) => {
-  const groupId = Number(req.params.id);
-  const content = (req.body?.content || "").trim();
+//////////
+// Crée une publication dans un groupe
+// Auteur doit être membre du groupe
+// Visibility par défaut: PUBLIC
+// Retourne: redirect /groups/:id
+//////////
+routesGroupes.post("/:id/posts", exigerAuthentification, async (requete, reponse) => {
+  const idGroupe = Number(requete.params.id);
+  const contenu = (requete.body?.content || "").trim();
 
-  if (!Number.isFinite(groupId)) return res.redirect("/groups");
-  if (!content) return res.redirect(`/groups/${groupId}`);
+  if (!Number.isFinite(idGroupe)) return reponse.redirect("/groups");
+  if (!contenu) return reponse.redirect(`/groups/${idGroupe}`);
 
-  const member = await getMembership(groupId, req.user.id);
-  if (!member) return res.status(403).send("Forbidden");
+  const adhesion = await obtenirAdhesion(idGroupe, requete.user.id);
+  if (!adhesion) return reponse.status(403).send("Forbidden");
 
   await query(
     "INSERT INTO Post (content, authorId, groupId, visibility, createdAt) VALUES (?, ?, ?, 'PUBLIC', NOW())",
-    [content, req.user.id, groupId]
+    [contenu, requete.user.id, idGroupe]
   );
 
-  res.redirect(`/groups/${groupId}`);
+  reponse.redirect(`/groups/${idGroupe}`);
 });
 
-/**
- * POST /groups/:id/events
- * Création event (membre only)
- */
-groupsRouter.post("/:id/events", requireAuth, async (req, res) => {
-  const groupId = Number(req.params.id);
-  if (!Number.isFinite(groupId)) return res.redirect("/groups");
+//////////
+// Crée un événement dans un groupe
+// Valide: titre et startAt requis
+// Envoie notifications GROUP_CREATED à tous les membres
+// Retourne: redirect /groups/:id
+//////////
+routesGroupes.post("/:id/events", exigerAuthentification, async (requete, reponse) => {
+  const idGroupe = Number(requete.params.id);
+  if (!Number.isFinite(idGroupe)) return reponse.redirect("/groups");
 
-  const title = (req.body?.title || "").trim();
-  const location = (req.body?.location || "").trim();
-  const description = (req.body?.description || "").trim();
-  const startAtRaw = String(req.body?.startAt || "");
-  const endAtRaw = String(req.body?.endAt || "");
+  const titre = (requete.body?.title || "").trim();
+  const lieu = (requete.body?.location || "").trim();
+  const description = (requete.body?.description || "").trim();
+  const debutRaw = String(requete.body?.startAt || "");
+  const finRaw = String(requete.body?.endAt || "");
 
-  if (!title || !startAtRaw) return res.redirect(`/groups/${groupId}`);
+  if (!titre || !debutRaw) return reponse.redirect(`/groups/${idGroupe}`);
 
-  const member = await queryOne(
+  const adhesion = await queryOne(
     "SELECT * FROM GroupMember WHERE groupId = ? AND userId = ?",
-    [groupId, req.user.id]
+    [idGroupe, requete.user.id]
   );
-  if (!member) return res.status(403).send("Forbidden");
+  if (!adhesion) return reponse.status(403).send("Forbidden");
 
-  const startAt = new Date(startAtRaw);
-  const endAt = endAtRaw ? new Date(endAtRaw) : null;
+  const debut = new Date(debutRaw);
+  const fin = finRaw ? new Date(finRaw) : null;
 
-  if (Number.isNaN(startAt.getTime())) return res.redirect(`/groups/${groupId}`);
-  if (endAt && Number.isNaN(endAt.getTime())) return res.redirect(`/groups/${groupId}`);
+  if (Number.isNaN(debut.getTime())) return reponse.redirect(`/groups/${idGroupe}`);
+  if (fin && Number.isNaN(fin.getTime())) return reponse.redirect(`/groups/${idGroupe}`);
 
-  const result = await query(
+  const resultat = await query(
     "INSERT INTO Event (title, location, description, startAt, endAt, groupId, creatorId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
-    [title, location || null, description || null, startAt, endAt, groupId, req.user.id]
+    [titre, lieu || null, description || null, debut, fin, idGroupe, requete.user.id]
   );
 
-  const eventId = result.insertId;
+  const idEvenement = resultat.insertId;
 
-  // 🔔 Notif EVENT_CREATED à tous les membres du groupe (sauf créateur)
-  const members = await query(
+  const membres = await query(
     "SELECT userId FROM GroupMember WHERE groupId = ?",
-    [groupId]
+    [idGroupe]
   );
 
-  for (const m of members) {
-    if (m.userId === req.user.id) continue;
-
-    await createNotification({
-      type: "EVENT_CREATED",
-      toUserId: m.userId,
-      fromUserId: req.user.id,
-      eventId: eventId
+  for (const m of membres) {
+    if (m.userId === requete.user.id) continue;
+    await creerNotification({
+      type: "EVENT_CREATED", toUserId: m.userId, fromUserId: requete.user.id, eventId: idEvenement
     });
   }
 
-  res.redirect(`/groups/${groupId}`);
+  reponse.redirect(`/groups/${idGroupe}`);
 });
 
-/**
- * GET /groups/:id/api/events
- * Retourne les événements du groupe au format JSON
- */
-groupsRouter.get("/:id/api/events", requireAuth, async (req, res) => {
-  const groupId = Number(req.params.id);
-  if (!Number.isFinite(groupId)) {
-    return res.json({ error: "Invalid group ID" });
-  }
+//////////
+// API: Retourne les événements d'un groupe au format JSON
+// Gère les permissions (PUBLIC ou membre)
+// Retourne: JSON array d'événements
+//////////
+routesGroupes.get("/:id/api/events", exigerAuthentification, async (requete, reponse) => {
+  const idGroupe = Number(requete.params.id);
+  if (!Number.isFinite(idGroupe)) return reponse.json({ error: "Invalid group id" });
 
   try {
-    const group = await queryOne("SELECT * FROM `Group` WHERE id = ?", [groupId]);
+    const groupe = await queryOne("SELECT * FROM \`Group\` WHERE id = ?", [idGroupe]);
+    if (!groupe) return reponse.json({ error: "Group not found" });
 
-    if (!group) {
-      return res.json({ error: "Group not found" });
+    const adhesion = await obtenirAdhesion(idGroupe, requete.user.id);
+    if (!adhesion && groupe.privacy !== "PUBLIC") {
+      return reponse.json({ error: "Access denied" });
     }
 
-    const member = await getMembership(groupId, req.user.id);
-    if (!member && group.privacy !== "PUBLIC") {
-      return res.json({ error: "Access denied" });
-    }
-
-    const rawEvents = await query(`
-      SELECT
-        e.*,
-        u.id as creator_id,
-        u.displayName as creator_displayName
+    const donnesEvenements = await query(`
+      SELECT e.*, u.id as creator_id, u.displayName as creator_displayName
       FROM Event e
       LEFT JOIN User u ON e.creatorId = u.id
       WHERE e.groupId = ?
       ORDER BY e.startAt ASC
-    `, [groupId]);
+    `, [idGroupe]);
 
-    const eventIds = rawEvents.map(e => e.id);
-    const attendees = eventIds.length > 0 ? await query(`
-      SELECT eventId, userId, status FROM EventAttendee WHERE eventId IN (${eventIds.map(() => '?').join(',')})
-    `, eventIds) : [];
+    const evenements = donnesEvenements.map(ev => ({
+      id: ev.id, title: ev.title, location: ev.location, description: ev.description,
+      startAt: ev.startAt, endAt: ev.endAt, groupId: ev.groupId, creatorId: ev.creatorId,
+      createdAt: ev.createdAt, creator: { id: ev.creator_id, displayName: ev.creator_displayName },
+      attendees: [], goingCount: 0, userRsvp: null
+    }));
 
-    const events = rawEvents.map(ev => {
-      const evAttendees = attendees.filter(a => a.eventId === ev.id);
-      return {
-        id: ev.id,
-        title: ev.title,
-        location: ev.location,
-        description: ev.description,
-        startAt: ev.startAt,
-        endAt: ev.endAt,
-        groupId: ev.groupId,
-        creatorId: ev.creatorId,
-        createdAt: ev.createdAt,
-        creator: {
-          id: ev.creator_id,
-          displayName: ev.creator_displayName
-        },
-        attendees: evAttendees,
-        goingCount: evAttendees.filter(a => a.status === 'GOING').length,
-        userRsvp: evAttendees.find(a => a.userId === req.user.id)?.status || null
-      };
-    });
-
-    res.json(events);
+    reponse.json(evenements);
   } catch (error) {
     console.error("Error fetching events:", error);
-    res.json({ error: "Error fetching events" });
+    reponse.json({ error: "Error fetching events" });
   }
 });
 
-/**
- * GET /groups/:id/api/stats
- * Retourne les statistiques du groupe
- */
-groupsRouter.get("/:id/api/stats", requireAuth, async (req, res) => {
-  const groupId = Number(req.params.id);
-  if (!Number.isFinite(groupId)) {
-    return res.json({ error: "Invalid group ID" });
-  }
+//////////
+// API: Retourne les statistiques d'un groupe
+// Comptes: membres, événements, publications
+// Retourne: JSON avec statistiques
+//////////
+routesGroupes.get("/:id/api/stats", exigerAuthentification, async (requete, reponse) => {
+  const idGroupe = Number(requete.params.id);
+  if (!Number.isFinite(idGroupe)) return reponse.json({ error: "Invalid group id" });
 
   try {
-    const group = await queryOne("SELECT * FROM `Group` WHERE id = ?", [groupId]);
+    const groupe = await queryOne("SELECT * FROM \`Group\` WHERE id = ?", [idGroupe]);
+    if (!groupe) return reponse.json({ error: "Group not found" });
 
-    if (!group) {
-      return res.json({ error: "Group not found" });
+    const adhesion = await obtenirAdhesion(idGroupe, requete.user.id);
+    if (!adhesion && groupe.privacy !== "PUBLIC") {
+      return reponse.json({ error: "Access denied" });
     }
 
-    const member = await getMembership(groupId, req.user.id);
-    if (!member && group.privacy !== "PUBLIC") {
-      return res.json({ error: "Access denied" });
-    }
+    const maintenant = new Date();
+    const totalMembreResult = await queryOne("SELECT COUNT(*) as count FROM GroupMember WHERE groupId = ?", [idGroupe]);
+    const compteurEvenementResult = await queryOne("SELECT COUNT(*) as count FROM Event WHERE groupId = ?", [idGroupe]);
+    const evenementsAveniResult = await queryOne("SELECT COUNT(*) as count FROM Event WHERE groupId = ? AND startAt >= ?", [idGroupe, maintenant]);
+    const totalPublicationResult = await queryOne("SELECT COUNT(*) as count FROM Post WHERE groupId = ?", [idGroupe]);
 
-    const now = new Date();
-
-    const totalMembersResult = await queryOne("SELECT COUNT(*) as count FROM GroupMember WHERE groupId = ?", [groupId]);
-    const eventCountResult = await queryOne("SELECT COUNT(*) as count FROM Event WHERE groupId = ?", [groupId]);
-    const upcomingEventsResult = await queryOne("SELECT COUNT(*) as count FROM Event WHERE groupId = ? AND startAt >= ?", [groupId, now]);
-    const totalPostsResult = await queryOne("SELECT COUNT(*) as count FROM Post WHERE groupId = ?", [groupId]);
-
-    res.json({
-      totalMembers: totalMembersResult?.count || 0,
-      eventCount: eventCountResult?.count || 0,
-      upcomingEvents: upcomingEventsResult?.count || 0,
-      totalPosts: totalPostsResult?.count || 0
+    reponse.json({
+      totalMembers: totalMembreResult?.count || 0,
+      eventCount: compteurEvenementResult?.count || 0,
+      upcomingEvents: evenementsAveniResult?.count || 0,
+      totalPosts: totalPublicationResult?.count || 0
     });
   } catch (error) {
     console.error("Error fetching stats:", error);
-    res.json({ error: "Error fetching stats" });
+    reponse.json({ error: "Error fetching stats" });
   }
 });
+
+
+
+
+
+
 

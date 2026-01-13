@@ -1,142 +1,76 @@
 import express from "express";
 import { query, queryOne } from "../db.js";
-import { requireAuth } from "../auth/auth.middleware.js";
-import { createNotification } from "../notifications/notifications.service.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
 
-export const friendsRouter = express.Router();
+export const routesAmis = express.Router();
 
-function pair(a, b) {
-  return a < b ? { userAId: a, userBId: b } : { userAId: b, userBId: a };
-}
+//////////
+// Affiche les amis (followers, following, mutuals) d'un utilisateur
+// Système basé sur Follow bidirectionnel
+// Retourne: vue friends/index avec les listes d'amis
+//////////
+routesAmis.get("/", exigerAuthentification, async (requete, reponse) => {
+  const onglet = requete.query.tab || "followers";
+  const idUtilisateur = requete.query.userId ? Number(requete.query.userId) : requete.user.id;
 
-async function areFriends(userId1, userId2) {
-  const { userAId, userBId } = pair(userId1, userId2);
-  const fs = await queryOne(
-    "SELECT * FROM Friendship WHERE userAId = ? AND userBId = ?",
-    [userAId, userBId]
-  );
-  return !!fs;
-}
-
-friendsRouter.get("/", requireAuth, async (req, res) => {
-  const tab = req.query.tab || "followers"; // "followers", "following"
-  const userId = req.query.userId ? Number(req.query.userId) : req.user.id;
-
-  if (!Number.isFinite(userId)) {
-    return res.redirect("/friends");
+  if (!Number.isFinite(idUtilisateur)) {
+    return reponse.redirect("/friends");
   }
 
-  let followers = [];
-  let following = [];
-  let viewingUser = null;
+  let abonnes = [];
+  let abonnements = [];
+  let mutuels = [];
+  let utilisateurConsulte = null;
 
-  // Récupérer les infos de l'utilisateur consulté
-  viewingUser = await queryOne(
+  utilisateurConsulte = await queryOne(
     "SELECT id, displayName FROM User WHERE id = ?",
-    [userId]
+    [idUtilisateur]
   );
 
-  if (!viewingUser) {
-    return res.redirect("/friends");
+  if (!utilisateurConsulte) {
+    return reponse.redirect("/friends");
   }
 
-  if (tab === "followers") {
-    followers = await query(`
+  if (onglet === "followers") {
+    abonnes = await query(`
       SELECT u.id, u.displayName, u.avatar
       FROM Follow f
       JOIN User u ON f.followerId = u.id
       WHERE f.followedId = ?
-    `, [userId]);
-  } else if (tab === "following") {
-    following = await query(`
+      ORDER BY f.createdAt DESC
+    `, [idUtilisateur]);
+  } else if (onglet === "following") {
+    abonnements = await query(`
       SELECT u.id, u.displayName, u.avatar
       FROM Follow f
       JOIN User u ON f.followedId = u.id
       WHERE f.followerId = ?
-    `, [userId]);
+      ORDER BY f.createdAt DESC
+    `, [idUtilisateur]);
+  } else if (onglet === "mutuals") {
+    mutuels = await query(`
+      SELECT u.id, u.displayName, u.avatar
+      FROM Follow f1
+      JOIN Follow f2 ON f1.followerId = f2.followedId AND f1.followedId = f2.followerId
+      JOIN User u ON f1.followedId = u.id
+      WHERE f1.followerId = ?
+      ORDER BY f1.createdAt DESC
+    `, [idUtilisateur]);
   }
 
-  res.render("friends/index", { 
-    user: req.user, 
-    followers, 
-    following,
-    tab,
-    viewingUserId: userId,
-    viewingUserName: viewingUser.displayName
+  reponse.render("friends/index", {
+    user: requete.user,
+    followers: abonnes,
+    following: abonnements,
+    mutuals: mutuels,
+    tab: onglet,
+    viewingUserId: idUtilisateur,
+    viewingUserName: utilisateurConsulte.displayName
   });
 });
 
-friendsRouter.post("/request/:id", requireAuth, async (req, res) => {
-  const toUserId = Number(req.params.id);
-  const back = req.get("referer") || "/friends";
-
-  if (!Number.isFinite(toUserId) || toUserId === req.user.id) return res.redirect(back);
-  if (await areFriends(req.user.id, toUserId)) return res.redirect(back);
-
-  try {
-    const result = await query(
-      "INSERT INTO FriendRequest (fromUserId, toUserId, status, createdAt) VALUES (?, ?, 'PENDING', NOW())",
-      [req.user.id, toUserId]
-    );
-
-    await createNotification({
-      type: "FRIEND_REQUEST",
-      toUserId,
-      fromUserId: req.user.id,
-      friendRequestId: result.insertId
-    });
-  } catch (err) {
-    // Ignore si déjà existe
-  }
 
 
-  res.redirect(back);
-});
 
-friendsRouter.post("/accept/:requestId", requireAuth, async (req, res) => {
-  const requestId = Number(req.params.requestId);
-  if (!Number.isFinite(requestId)) return res.redirect("/friends");
 
-  const fr = await queryOne(
-    "SELECT * FROM FriendRequest WHERE id = ?",
-    [requestId]
-  );
-  if (!fr || fr.toUserId !== req.user.id || fr.status !== "PENDING") return res.redirect("/friends");
 
-  await query(
-    "UPDATE FriendRequest SET status = 'ACCEPTED' WHERE id = ?",
-    [requestId]
-  );
-
-  await createNotification({
-    type: "FRIEND_ACCEPTED",
-    toUserId: fr.fromUserId,
-    fromUserId: req.user.id,
-    friendRequestId: fr.id
-  });
-
-  const { userAId, userBId } = pair(fr.fromUserId, fr.toUserId);
-  await query(
-    "INSERT INTO Friendship (userAId, userBId) VALUES (?, ?)",
-    [userAId, userBId]
-  ).catch(() => {});
-
-  res.redirect("/friends");
-});
-
-friendsRouter.post("/reject/:requestId", requireAuth, async (req, res) => {
-  const requestId = Number(req.params.requestId);
-  if (!Number.isFinite(requestId)) return res.redirect("/friends");
-
-  const fr = await queryOne(
-    "SELECT * FROM FriendRequest WHERE id = ?",
-    [requestId]
-  );
-  if (!fr || fr.toUserId !== req.user.id || fr.status !== "PENDING") return res.redirect("/friends");
-
-  await query(
-    "UPDATE FriendRequest SET status = 'REJECTED' WHERE id = ?",
-    [requestId]
-  );
-  res.redirect("/friends");
-});

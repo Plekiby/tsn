@@ -1,82 +1,113 @@
 import express from "express";
-import { requireAuth } from "../auth/auth.middleware.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
 import { query, queryOne } from "../db.js";
-import { createNotification } from "../notifications/notifications.service.js";
-import { getUnreadCount } from "../notifications/notifications.service.js";
+import { creerNotification } from "../notifications/notifications.service.js";
+import { obtenirCompteurNotifications } from "../notifications/notifications.service.js";
 
-export const postsRouter = express.Router();
+export const routesPosts = express.Router();
 
-/**
- * Feed SMART (privacy + scoring)
- * Debug: /posts/feed?debug=1
- */
-postsRouter.get("/feed", requireAuth, async (req, res) => {
-  const meId = req.user.id;
-  const debug = req.query.debug === "1" || req.query.debug === "true";
+//////////
+// Charge le feed avec posts triés par scoring intelligent
+// Filtre les posts selon la visibility et les intérêts
+// Retourne: objet { utilisateur, publications, debug, compteurNotifications }
+//////////
+routesPosts.get("/feed", exigerAuthentification, async (requete, reponse) => {
+  const idUtilisateur = requete.user.id;
+  const affichageDebug = requete.query.debug === "1" || requete.query.debug === "true";
 
-  // 1) ids des auteurs que je follow
-  const following = await query(
+  // 1) Récupérer les utilisateurs que je suis
+  const abonnementsData = await query(
     "SELECT followedId FROM Follow WHERE followerId = ?",
-    [meId]
+    [idUtilisateur]
   );
-  const followingIds = following.map(f => f.followedId);
-  const followingSet = new Set(followingIds);
+  const idsAbonnes = abonnementsData.map(f => f.followedId);
+  const ensembleAbonnes = new Set(idsAbonnes);
 
-  // 2) ids de mes amis (friendship non orienté)
-  const friendships = await query(
-    "SELECT userAId, userBId FROM Friendship WHERE userAId = ? OR userBId = ?",
-    [meId, meId]
-  );
-  const friendIds = friendships.map(f => (f.userAId === meId ? f.userBId : f.userAId));
-  const friendsSet = new Set(friendIds);
+  // 2) Récupérer les mutuals (follow bidirectionnel)
+  const mutuelsData = idsAbonnes.length > 0
+    ? await query(
+        `SELECT followerId FROM Follow WHERE followedId = ? AND followerId IN (${idsAbonnes.map(() => '?').join(',')})`,
+        [idUtilisateur, ...idsAbonnes]
+      )
+    : [];
+  const idsAmis = mutuelsData.map(m => m.followerId);
+  const ensembleAmis = new Set(idsAmis);
 
-  // 3) mes intérêts
-  const myInterests = await query(
+  // 3) Récupérer mes intérêts
+  const mesInterets = await query(
     "SELECT interestId FROM UserInterest WHERE userId = ?",
-    [meId]
+    [idUtilisateur]
   );
-  const myInterestSet = new Set(myInterests.map(x => x.interestId));
+  const ensembleInterets = new Set(mesInterets.map(x => x.interestId));
 
-  // 3.5) mes memberships de groupes (pour posts privés de groupes)
-  const memberships = await query(
+  // 4) Récupérer mes memberships de groupes
+  const adhesions = await query(
     "SELECT groupId FROM GroupMember WHERE userId = ?",
-    [req.user.id]
+    [idUtilisateur]
   );
-  const groupIds = memberships.map(m => m.groupId);
+  const idsGroupes = adhesions.map(m => m.groupId);
 
-  // 4) Construction de la clause WHERE SQL
-  let whereClauses = [];
-  let whereParams = [];
+  // 4b) Récupérer les utilisateurs que je bloque ou que j'ai mute
+  const utilisateursBloquesData = await query(
+    "SELECT blockedId FROM UserBlock WHERE blockerId = ?",
+    [idUtilisateur]
+  );
+  const idsBloque = utilisateursBloquesData.map(b => b.blockedId);
 
-  // Mes propres posts
-  whereClauses.push("p.authorId = ?");
-  whereParams.push(meId);
+  const utilisateursMutesData = await query(
+    "SELECT mutedId FROM UserMute WHERE muterId = ?",
+    [idUtilisateur]
+  );
+  const idsMute = utilisateursMutesData.map(m => m.mutedId);
 
-  // Posts publics
-  whereClauses.push("p.visibility = 'PUBLIC'");
+  const idsUtilisateursFiltres = [...new Set([...idsBloque, ...idsMute])];
 
-  // Posts FOLLOWERS si je follow des gens
-  if (followingIds.length > 0) {
-    whereClauses.push(`(p.visibility = 'FOLLOWERS' AND p.authorId IN (${followingIds.map(() => '?').join(',')}))`);
-    whereParams.push(...followingIds);
+  // 5) Construire la clause WHERE SQL pour les permissions
+  let clausesOu = [];
+  let parametresSql = [];
+
+  clausesOu.push("p.authorId = ?");
+  parametresSql.push(idUtilisateur);
+
+  clausesOu.push("p.visibility = 'PUBLIC'");
+
+  if (idsAbonnes.length > 0) {
+    clausesOu.push(`(p.visibility = 'FOLLOWERS' AND p.authorId IN (${idsAbonnes.map(() => '?').join(',')}))`);
+    parametresSql.push(...idsAbonnes);
   }
 
-  // Posts FRIENDS si j'ai des amis
-  if (friendIds.length > 0) {
-    whereClauses.push(`(p.visibility = 'FRIENDS' AND p.authorId IN (${friendIds.map(() => '?').join(',')}))`);
-    whereParams.push(...friendIds);
+  if (idsAmis.length > 0) {
+    clausesOu.push(`(p.visibility = 'FRIENDS' AND p.authorId IN (${idsAmis.map(() => '?').join(',')}))`);
+    parametresSql.push(...idsAmis);
   }
 
-  // Posts de groupes dont je suis membre
-  if (groupIds.length > 0) {
-    whereClauses.push(`p.groupId IN (${groupIds.map(() => '?').join(',')})`);
-    whereParams.push(...groupIds);
+  if (idsGroupes.length > 0) {
+    clausesOu.push(`p.groupId IN (${idsGroupes.map(() => '?').join(',')})`);
+    parametresSql.push(...idsGroupes);
   }
 
-  const whereSQL = whereClauses.length > 0 ? `WHERE (${whereClauses.join(' OR ')})` : '';
+  let clauseFiltre = "";
+  let parametresFiltre = [];
+  
+  // Exclure les posts de groupe où je ne suis pas membre
+  if (idsGroupes.length > 0) {
+    clauseFiltre = ` AND (p.groupId IS NULL OR p.groupId IN (${idsGroupes.map(() => '?').join(',')}))`;
+    parametresFiltre = idsGroupes;
+  } else {
+    // Si je n'appartiens à aucun groupe, exclure tous les posts de groupe
+    clauseFiltre = " AND p.groupId IS NULL";
+  }
+  
+  if (idsUtilisateursFiltres.length > 0) {
+    clauseFiltre += ` AND p.authorId NOT IN (${idsUtilisateursFiltres.map(() => '?').join(',')})`;
+    parametresFiltre.push(...idsUtilisateursFiltres);
+  }
 
-  // 5) récupérer les posts visibles
-  const postsData = await query(`
+  const sqlWhere = clausesOu.length > 0 ? `WHERE (${clausesOu.join(' OR ')})${clauseFiltre}` : '';
+  parametresSql.push(...parametresFiltre);
+
+  // 6) Récupérer tous les posts visibles
+  const donneesPublications = await query(`
     SELECT
       p.*,
       u.id as author_id,
@@ -88,31 +119,30 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
     FROM Post p
     LEFT JOIN User u ON p.authorId = u.id
     LEFT JOIN \`Group\` g ON p.groupId = g.id
-    ${whereSQL}
+    ${sqlWhere}
     ORDER BY p.createdAt DESC
     LIMIT 80
-  `, whereParams);
+  `, parametresSql);
 
-  // Récupérer les likes de chaque post
-  const postIds = postsData.map(p => p.id);
-  const likes = postIds.length > 0 ? await query(`
-    SELECT postId, userId FROM \`Like\` WHERE postId IN (${postIds.map(() => '?').join(',')})
-  `, postIds) : [];
+  // Récupérer les likes et commentaires
+  const idsPublications = donneesPublications.map(p => p.id);
+  const likes = idsPublications.length > 0 ? await query(`
+    SELECT postId, userId FROM \`Like\` WHERE postId IN (${idsPublications.map(() => '?').join(',')})
+  `, idsPublications) : [];
 
-  // Récupérer les 3 derniers commentaires de chaque post
-  const comments = postIds.length > 0 ? await query(`
+  const commentaires = idsPublications.length > 0 ? await query(`
     SELECT
       c.*,
       u.id as user_id,
       u.displayName as user_displayName
     FROM Comment c
     JOIN User u ON c.userId = u.id
-    WHERE c.postId IN (${postIds.map(() => '?').join(',')})
+    WHERE c.postId IN (${idsPublications.map(() => '?').join(',')})
     ORDER BY c.createdAt DESC
-  `, postIds) : [];
+  `, idsPublications) : [];
 
-  // Regrouper les données
-  const rawPosts = postsData.map(p => ({
+  // 7) Mapper les données brutes en publications
+  const publicationsBrutes = donneesPublications.map(p => ({
     id: p.id,
     content: p.content,
     visibility: p.visibility,
@@ -128,7 +158,7 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
       name: p.group_name
     } : null,
     likes: likes.filter(l => l.postId === p.id).map(l => ({ userId: l.userId })),
-    comments: comments
+    comments: commentaires
       .filter(c => c.postId === p.id)
       .slice(0, 3)
       .map(c => ({
@@ -148,146 +178,154 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
     }
   }));
 
-  // 6) intérêts des auteurs (1 seule requête, pas de N+1)
-  const authorIds = [...new Set(rawPosts.map(p => p.authorId))];
-  const authorInterests = authorIds.length > 0
+  // 8) Récupérer les intérêts des auteurs (N+1 optimisé)
+  const idsAuteurs = [...new Set(publicationsBrutes.map(p => p.authorId))];
+  const interetsAuteurs = idsAuteurs.length > 0
     ? await query(`
-        SELECT userId, interestId FROM UserInterest WHERE userId IN (${authorIds.map(() => '?').join(',')})
-      `, authorIds)
+        SELECT userId, interestId FROM UserInterest WHERE userId IN (${idsAuteurs.map(() => '?').join(',')})
+      `, idsAuteurs)
     : [];
 
-  const interestsByUser = new Map(); // userId -> Set(interestId)
-  for (const row of authorInterests) {
-    if (!interestsByUser.has(row.userId)) interestsByUser.set(row.userId, new Set());
-    interestsByUser.get(row.userId).add(row.interestId);
+  const interetsParUtilisateur = new Map();
+  for (const row of interetsAuteurs) {
+    if (!interetsParUtilisateur.has(row.userId)) interetsParUtilisateur.set(row.userId, new Set());
+    interetsParUtilisateur.get(row.userId).add(row.interestId);
   }
 
-  const now = Date.now();
+  const instantActuel = Date.now();
 
-  function commonInterestsCount(authorId) {
-    const aSet = interestsByUser.get(authorId);
-    if (!aSet || myInterestSet.size === 0) return 0;
+  function compterInteretsCommunsAvec(idAuteur) {
+    const ensembleAuteur = interetsParUtilisateur.get(idAuteur);
+    if (!ensembleAuteur || ensembleInterets.size === 0) return 0;
 
-    let count = 0;
-    const [small, big] =
-      myInterestSet.size <= aSet.size ? [myInterestSet, aSet] : [aSet, myInterestSet];
+    let comptage = 0;
+    const [petit, grand] =
+      ensembleInterets.size <= ensembleAuteur.size ? [ensembleInterets, ensembleAuteur] : [ensembleAuteur, ensembleInterets];
 
-    for (const id of small) if (big.has(id)) count++;
-    return count;
+    for (const id of petit) if (grand.has(id)) comptage++;
+    return comptage;
   }
 
-  function computeScoreDetails(p) {
-    // relation score
-    let relationScore = 0;
-    // group bonus (si post appartient à un groupe dont je suis membre)
-    const groupBonus = p.groupId && groupIds.includes(p.groupId) ? 20 : 0;
-    if (p.authorId === meId) relationScore = 100;
-    else if (friendsSet.has(p.authorId)) relationScore = 60;
-    else if (followingSet.has(p.authorId)) relationScore = 30;
-    else relationScore = 10;
+  function calculerDetailsScore(publication) {
+    let scoreRelation = 0;
+    const bonusGroupe = publication.groupId && idsGroupes.includes(publication.groupId) ? 20 : 0;
 
-    // interest score
-    const common = commonInterestsCount(p.authorId);
-    const interestScore = common * 6;
+    if (publication.authorId === idUtilisateur) scoreRelation = 100;
+    else if (ensembleAmis.has(publication.authorId)) scoreRelation = 60;
+    else if (ensembleAbonnes.has(publication.authorId)) scoreRelation = 30;
+    else scoreRelation = 10;
 
-    // freshness score
-    const ageHours = (now - new Date(p.createdAt).getTime()) / (1000 * 60 * 60);
-    const freshnessScore = Math.max(0, 40 - ageHours);
+    const interetsCommuns = compterInteretsCommunsAvec(publication.authorId);
+    const scoreInterets = interetsCommuns * 6;
 
-    // engagement score (borné)
-    const likesCount = p._count?.likes ?? p.likes?.length ?? 0;
-    const commentsCount = p._count?.comments ?? 0;
-    const engagementScore = Math.min(12, likesCount) + Math.min(12, commentsCount);
+    const heuresEcoulees = (instantActuel - new Date(publication.createdAt).getTime()) / (1000 * 60 * 60);
+    const scoreRecence = Math.max(0, 40 - heuresEcoulees);
 
-    const privatePenalty = p.visibility === "PRIVATE" && p.authorId !== meId ? -9999 : 0;
+    const nbLikes = publication._count?.likes ?? publication.likes?.length ?? 0;
+    const nbCommentaires = publication._count?.comments ?? 0;
+    const scoreEngagement = Math.min(12, nbLikes) + Math.min(12, nbCommentaires);
 
-    const score = relationScore + interestScore + freshnessScore + engagementScore + groupBonus +privatePenalty;
+    const penalitePrive = publication.visibility === "PRIVATE" && publication.authorId !== idUtilisateur ? -9999 : 0;
+
+    const scoreTotal = scoreRelation + scoreInterets + scoreRecence + scoreEngagement + bonusGroupe + penalitePrive;
 
     return {
-      score,
-      relationScore,
-      commonInterests: common,
-      interestScore,
-      ageHours,
-      freshnessScore,
-      likesCount,
-      commentsCount,
-      engagementScore,
-      groupBonus
+      scoreTotal,
+      scoreRelation,
+      interetsCommuns,
+      scoreInterets,
+      heuresEcoulees,
+      scoreRecence,
+      nbLikes,
+      nbCommentaires,
+      scoreEngagement,
+      bonusGroupe
     };
   }
 
-  const posts = rawPosts
+  const publications = publicationsBrutes
     .map(p => {
-      const details = computeScoreDetails(p);
-      return debug
-        ? { ...p, score: details.score, debugScore: details }
-        : { ...p, score: details.score };
+      const details = calculerDetailsScore(p);
+      return affichageDebug
+        ? { ...p, score: details.scoreTotal, debugScore: details }
+        : { ...p, score: details.scoreTotal };
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 50);
 
-  const unreadCountResult = await queryOne(
+  const resultatCompteur = await queryOne(
     "SELECT COUNT(*) as count FROM Notification WHERE toUserId = ? AND readAt IS NULL",
-    [req.user.id]
+    [idUtilisateur]
   );
-  const unreadCount = unreadCountResult ? unreadCountResult.count : 0;
-  res.render("feed/index", { user: req.user, posts, debug, unreadCount });
+  const compteurNotifications = resultatCompteur ? resultatCompteur.count : 0;
+  reponse.render("feed/index", { user: requete.user, posts: publications, debug: affichageDebug, unreadCount: compteurNotifications });
 });
 
-// Create post avec visibility
-postsRouter.post("/", requireAuth, async (req, res) => {
-  const content = (req.body?.content || "").trim();
-  const visibility = (req.body?.visibility || "PUBLIC").toUpperCase();
+//////////
+// Crée un nouveau post avec visibility
+// Filtre et valide le contenu et la visibilité
+// Retourne: redirect /posts/feed
+//////////
+routesPosts.post("/", exigerAuthentification, async (requete, reponse) => {
+  const contenu = (requete.body?.content || "").trim();
+  const visibilite = (requete.body?.visibility || "PUBLIC").toUpperCase();
 
-  const allowed = new Set(["PUBLIC", "FOLLOWERS", "FRIENDS", "PRIVATE"]);
-  const safeVisibility = allowed.has(visibility) ? visibility : "PUBLIC";
+  const visibiliteAutorisees = new Set(["PUBLIC", "FOLLOWERS", "FRIENDS", "PRIVATE"]);
+  const visibiliteSure = visibiliteAutorisees.has(visibilite) ? visibilite : "PUBLIC";
 
-  if (!content) return res.redirect("/posts/feed");
+  if (!contenu) return reponse.redirect("/posts/feed");
 
   await query(
     "INSERT INTO Post (content, visibility, authorId, createdAt) VALUES (?, ?, ?, NOW())",
-    [content, safeVisibility, req.user.id]
+    [contenu, visibiliteSure, requete.user.id]
   );
 
-  res.redirect("/posts/feed");
+  reponse.redirect("/posts/feed");
 });
 
-postsRouter.post("/:id/like", requireAuth, async (req, res) => {
-  const postId = Number(req.params.id);
-  if (!Number.isFinite(postId)) return res.redirect("/posts/feed");
+//////////
+// Ajoute un like à une publication
+// Crée une notification pour l'auteur
+// Retourne: redirect vers feed ou groupe si applicable
+//////////
+routesPosts.post("/:id/like", exigerAuthentification, async (requete, reponse) => {
+  const idPublication = Number(requete.params.id);
+  if (!Number.isFinite(idPublication)) return reponse.redirect("/posts/feed");
 
-  const post = await queryOne(
+  const publication = await queryOne(
     "SELECT id, authorId, groupId FROM Post WHERE id = ?",
-    [postId]
+    [idPublication]
   );
-  if (!post) return res.redirect("/posts/feed");
+  if (!publication) return reponse.redirect("/posts/feed");
 
   try {
     await query(
       "INSERT INTO `Like` (userId, postId) VALUES (?, ?)",
-      [req.user.id, postId]
+      [requete.user.id, idPublication]
     );
 
-    await createNotification({
+    await creerNotification({
       type: "LIKE",
-      toUserId: post.authorId,
-      fromUserId: req.user.id,
-      postId
+      toUserId: publication.authorId,
+      fromUserId: requete.user.id,
+      postId: idPublication
     });
 
   } catch {
     await query(
       "DELETE FROM `Like` WHERE userId = ? AND postId = ?",
-      [req.user.id, postId]
+      [requete.user.id, idPublication]
     ).catch(() => {});
   }
 
-  // Rediriger vers le groupe si c'est un post de groupe, sinon vers le feed
-  if (post.groupId) {
-    res.redirect(`/groups/${post.groupId}`);
+  if (publication.groupId) {
+    reponse.redirect(`/groups/${publication.groupId}`);
   } else {
-    res.redirect("/posts/feed");
+    reponse.redirect("/posts/feed");
   }
 });
+
+
+
+
 

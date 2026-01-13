@@ -1,13 +1,30 @@
 import express from "express";
-import { requireAuth } from "../auth/auth.middleware.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
 import { query } from "../db.js";
 
-export const notificationsRouter = express.Router();
+export const routesNotifications = express.Router();
 
-/**
- * GET /notifications
- */
-notificationsRouter.get("/", requireAuth, async (req, res) => {
+//////////
+// Affiche toutes les notifications de l'utilisateur
+// Charge aussi les invitations de groupe
+// Filtre les notifications des utilisateurs mutés
+// Retourne: vue notifications/index avec notifications et groupInvites
+//////////
+routesNotifications.get("/", exigerAuthentification, async (requete, reponse) => {
+  // Récupérer les utilisateurs que j'ai mutés
+  const utilisateursMutesData = await query(
+    "SELECT mutedId FROM UserMute WHERE muterId = ?",
+    [requete.user.id]
+  );
+  const idsMutes = utilisateursMutesData.map(m => m.mutedId);
+
+  let clauseExclusion = "";
+  let parametresExclusion = [];
+  if (idsMutes.length > 0) {
+    clauseExclusion = ` AND n.fromUserId NOT IN (${idsMutes.map(() => '?').join(',')})`;
+    parametresExclusion = idsMutes;
+  }
+
   const notifications = await query(`
     SELECT
       n.*,
@@ -15,11 +32,11 @@ notificationsRouter.get("/", requireAuth, async (req, res) => {
       u.displayName as fromUser_displayName
     FROM Notification n
     LEFT JOIN User u ON n.fromUserId = u.id
-    WHERE n.toUserId = ?
+    WHERE n.toUserId = ?${clauseExclusion}
     ORDER BY n.createdAt DESC
-  `, [req.user.id]);
+  `, [requete.user.id, ...parametresExclusion]);
 
-  const notificationsData = notifications.map(n => ({
+  const donneesNotifications = notifications.map(n => ({
     id: n.id,
     type: n.type,
     toUserId: n.toUserId,
@@ -34,13 +51,13 @@ notificationsRouter.get("/", requireAuth, async (req, res) => {
       id: n.fromUser_id,
       displayName: n.fromUser_displayName
     } : null,
-    post: null,  // Pourrait être enrichi si nécessaire
+    post: null,
     comment: null,
     event: null
   }));
 
-  // Invitations "directes" (GroupInvite)
-  const groupInvites = await query(`
+  // Récupérer les invitations de groupe
+  const invitationsGroupe = await query(`
     SELECT
       gi.*,
       g.id as group_id,
@@ -56,9 +73,9 @@ notificationsRouter.get("/", requireAuth, async (req, res) => {
     LEFT JOIN User u ON gi.fromUserId = u.id
     WHERE gi.toUserId = ?
     ORDER BY gi.createdAt DESC
-  `, [req.user.id]);
+  `, [requete.user.id]);
 
-  const groupInvitesData = groupInvites.map(gi => ({
+  const donneesInvitationsGroupe = invitationsGroupe.map(gi => ({
     id: gi.id,
     groupId: gi.groupId,
     fromUserId: gi.fromUserId,
@@ -78,21 +95,29 @@ notificationsRouter.get("/", requireAuth, async (req, res) => {
     } : null
   }));
 
-  res.render("notifications/index", {
-    user: req.user,
-    notifications: notificationsData,
-    groupInvites: groupInvitesData
+  reponse.render("notifications/index", {
+    user: requete.user,
+    notifications: donneesNotifications,
+    groupInvites: donneesInvitationsGroupe
   });
 });
 
-/**
- * POST /notifications/read-all
- */
-notificationsRouter.post("/read-all", requireAuth, async (req, res) => {
+//////////
+// Marque toutes les notifications comme lues
+// Met à jour readAt pour toutes les notifications non lues
+// Retourne: redirect /notifications
+//////////
+routesNotifications.post("/read-all", exigerAuthentification, async (requete, reponse) => {
   await query(
     "UPDATE Notification SET readAt = NOW() WHERE toUserId = ? AND readAt IS NULL",
-    [req.user.id]
+    [requete.user.id]
   );
 
-  res.redirect("/notifications");
+  reponse.redirect("/notifications");
 });
+
+
+
+
+
+

@@ -1,6 +1,6 @@
 import express from "express";
 import { query, queryOne } from "../db.js";
-import { requireAuth } from "../auth/auth.middleware.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
 import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -9,58 +9,61 @@ import fs from "fs/promises";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export const profilesRouter = express.Router();
+export const routesProfils = express.Router();
 
-// Configuration multer pour l'upload d'images
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    const uploadsDir = path.join(__dirname, "../public/uploads");
+// Configuration multer pour les uploads
+const stockage = multer.diskStorage({
+  destination: async (requete, fichier, callback) => {
+    const repertoireUpload = path.join(__dirname, "../public/uploads");
     try {
-      await fs.mkdir(uploadsDir, { recursive: true });
+      await fs.mkdir(repertoireUpload, { recursive: true });
     } catch {}
-    cb(null, uploadsDir);
+    callback(null, repertoireUpload);
   },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
+  filename: (requete, fichier, callback) => {
+    const suffixeUnique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    callback(null, fichier.fieldname + "-" + suffixeUnique + path.extname(fichier.originalname));
   }
 });
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-    if (mimetype && extname) {
-      return cb(null, true);
+const telechargement = multer({
+  storage: stockage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (requete, fichier, callback) => {
+    const typesAutorises = /jpeg|jpg|png|gif|webp/;
+    const extension = typesAutorises.test(path.extname(fichier.originalname).toLowerCase());
+    const type = typesAutorises.test(fichier.mimetype);
+    if (type && extension) {
+      return callback(null, true);
     }
-    cb(new Error("Seuls les fichiers images sont autorisés"));
+    callback(new Error("Seuls les fichiers images sont autorisés"));
   }
 });
 
-/**
- * Page: consulter le profil d'un utilisateur
- */
-profilesRouter.get("/:id", requireAuth, async (req, res) => {
-  const userId = Number(req.params.id);
-  if (!Number.isFinite(userId)) {
-    return res.redirect("/feed");
+//////////
+// Affiche le profil public d'un utilisateur
+// Vérifie les permissions de visibilité (PRIVATE, FOLLOWERS, PUBLIC)
+// Charge les intérêts et les derniers posts
+// Retourne: vue profile avec données complètes
+//////////
+routesProfils.get("/:id", exigerAuthentification, async (requete, reponse) => {
+  const idUtilisateur = Number(requete.params.id);
+  if (!Number.isFinite(idUtilisateur)) {
+    return reponse.redirect("/feed");
   }
 
   try {
-    // Vérifier si l'utilisateur actuel est bloqué
-    const isBlocked = await queryOne(
+    // Vérifier si on est bloqué par cet utilisateur
+    const estBloque = await queryOne(
       "SELECT * FROM UserBlock WHERE blockerId = ? AND blockedId = ?",
-      [userId, req.user.id]
+      [idUtilisateur, requete.user.id]
     );
 
-    if (isBlocked && userId !== req.user.id) {
-      return res.status(403).render("errors/404", { message: "Vous n'avez pas accès à ce profil" });
+    if (estBloque && idUtilisateur !== requete.user.id) {
+      return reponse.status(403).render("errors/404", { message: "Vous n'avez pas accès à ce profil" });
     }
 
-    const profile = await queryOne(`
+    const profil = await queryOne(`
       SELECT
         u.id, u.displayName, u.email, u.avatar, u.banner, u.bio, u.location, u.website, u.dateOfBirth, u.createdAt,
         (SELECT COUNT(*) FROM Post WHERE authorId = u.id) as postsCount,
@@ -70,47 +73,47 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
       FROM User u
       LEFT JOIN UserPrivacy up ON u.id = up.userId
       WHERE u.id = ?
-    `, [userId]);
+    `, [idUtilisateur]);
 
-    if (!profile) {
-      return res.status(404).render("errors/404");
+    if (!profil) {
+      return reponse.status(404).render("errors/404");
     }
 
     // Récupérer les intérêts
-    const interests = await query(`
+    const interets = await query(`
       SELECT i.name
       FROM UserInterest ui
       JOIN Interest i ON ui.interestId = i.id
       WHERE ui.userId = ?
-    `, [userId]);
+    `, [idUtilisateur]);
 
-    // Vérifier les permissions d'accès au profil
-    const isOwnProfile = req.user.id === userId;
-    const privacy = profile.profileVisibility || "PUBLIC";
-    let canViewPosts = true;
-    let accessRestriction = null;
+    // Vérifier les permissions d'accès
+    const estMonProfil = requete.user.id === idUtilisateur;
+    const visibilite = profil.profileVisibility || "PUBLIC";
+    let peutVoirPosts = true;
+    let restrictionAcces = null;
 
-    if (!isOwnProfile && privacy === "PRIVATE") {
-      canViewPosts = false;
-      accessRestriction = "private";
+    if (!estMonProfil && visibilite === "PRIVATE") {
+      peutVoirPosts = false;
+      restrictionAcces = "private";
     }
 
-    if (!isOwnProfile && privacy === "FOLLOWERS") {
-      const isFollowingProfile = await queryOne(
+    if (!estMonProfil && visibilite === "FOLLOWERS") {
+      const jeSuisAbonne = await queryOne(
         "SELECT * FROM Follow WHERE followerId = ? AND followedId = ?",
-        [req.user.id, userId]
+        [requete.user.id, idUtilisateur]
       );
 
-      if (!isFollowingProfile) {
-        canViewPosts = false;
-        accessRestriction = "followers";
+      if (!jeSuisAbonne) {
+        peutVoirPosts = false;
+        restrictionAcces = "followers";
       }
     }
 
-    // Récupérer les posts si l'utilisateur a accès
-    let posts = [];
-    if (canViewPosts) {
-      posts = await query(`
+    // Récupérer les posts
+    let publications = [];
+    if (peutVoirPosts) {
+      publications = await query(`
         SELECT
           p.id, p.content, p.createdAt,
           (SELECT COUNT(*) FROM Comment WHERE postId = p.id) as commentsCount,
@@ -120,198 +123,196 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
         WHERE p.authorId = ?
         ORDER BY p.createdAt DESC
         LIMIT 10
-      `, [req.user.id, userId]);
+      `, [requete.user.id, idUtilisateur]);
     }
 
-    // Vérifier si l'utilisateur actuel suit ce profil
-    const isFollowing = await queryOne(
+    // Vérifier les relations
+    const jeSuisAbonne = await queryOne(
       "SELECT * FROM Follow WHERE followerId = ? AND followedId = ?",
-      [req.user.id, userId]
+      [requete.user.id, idUtilisateur]
     );
 
-    // Vérifier si utilisateur est bloqué par l'utilisateur actuel
-    const userIsBlocked = await queryOne(
+    const jeLeBloquerai = await queryOne(
       "SELECT * FROM UserBlock WHERE blockerId = ? AND blockedId = ?",
-      [req.user.id, userId]
+      [requete.user.id, idUtilisateur]
     );
 
-    // Vérifier si utilisateur est mute par l'utilisateur actuel
-    const userIsMuted = await queryOne(
+    const jeLourdeMute = await queryOne(
       "SELECT * FROM UserMute WHERE muterId = ? AND mutedId = ?",
-      [req.user.id, userId]
+      [requete.user.id, idUtilisateur]
     );
 
-    res.render("users/profile", {
-      user: req.user,
+    reponse.render("users/profile", {
+      user: requete.user,
       profile: {
-        ...profile,
+        ...profil,
         _count: {
-          posts: profile.postsCount,
-          followers: profile.followersCount,
-          following: profile.followingCount
+          posts: profil.postsCount,
+          followers: profil.followersCount,
+          following: profil.followingCount
         },
         privacy: {
-          profileVisibility: profile.profileVisibility,
-          canReceiveMessages: profile.canReceiveMessages
+          profileVisibility: profil.profileVisibility,
+          canReceiveMessages: profil.canReceiveMessages
         }
       },
-      isFollowing: !!isFollowing,
-      isOwnProfile,
-      interests: interests.map(i => i.name),
-      posts: posts.map(p => ({
+      isFollowing: !!jeSuisAbonne,
+      isOwnProfile: estMonProfil,
+      interests: interets.map(i => i.name),
+      posts: publications.map(p => ({
         ...p,
         _count: {
           comments: p.commentsCount,
           likes: p.likesCount
         },
-        likes: p.userLiked ? [{ userId: req.user.id }] : []
+        likes: p.userLiked ? [{ userId: requete.user.id }] : []
       })),
-      isBlocked: !!userIsBlocked,
-      isMuted: !!userIsMuted,
-      canViewPosts,
-      accessRestriction,
-      profileVisibility: privacy,
-      canReceiveMessages: profile.canReceiveMessages ?? true
+      isBlocked: !!jeLeBloquerai,
+      isMuted: !!jeLourdeMute,
+      canViewPosts: peutVoirPosts,
+      accessRestriction: restrictionAcces,
+      profileVisibility: visibilite,
+      canReceiveMessages: profil.canReceiveMessages ?? true
     });
-  } catch (error) {
-    console.error("Error loading profile:", error);
-    res.status(500).render("errors/500");
+  } catch (erreur) {
+    console.error("Erreur lors du chargement du profil:", erreur);
+    reponse.status(500).render("errors/500");
   }
 });
 
-/**
- * Page: éditer son propre profil
- */
-profilesRouter.get("/:id/edit", requireAuth, async (req, res) => {
-  const userId = Number(req.params.id);
+//////////
+// Affiche le formulaire d'édition du profil personnel
+// Charge les données actuelles de l'utilisateur
+// Retourne: vue profile-edit avec données pré-remplies
+//////////
+routesProfils.get("/:id/edit", exigerAuthentification, async (requete, reponse) => {
+  const idUtilisateur = Number(requete.params.id);
 
-  // On ne peut éditer que son propre profil
-  if (!Number.isFinite(userId) || userId !== req.user.id) {
-    return res.redirect("/feed");
+  if (!Number.isFinite(idUtilisateur) || idUtilisateur !== requete.user.id) {
+    return reponse.redirect("/feed");
   }
 
   try {
-    const profile = await queryOne(`
+    const profil = await queryOne(`
       SELECT
         u.id, u.displayName, u.email, u.avatar, u.banner, u.bio, u.location, u.website, u.dateOfBirth,
         up.profileVisibility, up.canReceiveMessages
       FROM User u
       LEFT JOIN UserPrivacy up ON u.id = up.userId
       WHERE u.id = ?
-    `, [userId]);
+    `, [idUtilisateur]);
 
-    if (!profile) {
-      return res.status(404).render("errors/404");
+    if (!profil) {
+      return reponse.status(404).render("errors/404");
     }
 
-    res.render("users/profile-edit", {
-      user: req.user,
+    reponse.render("users/profile-edit", {
+      user: requete.user,
       profile: {
-        ...profile,
+        ...profil,
         privacy: {
-          profileVisibility: profile.profileVisibility,
-          canReceiveMessages: profile.canReceiveMessages
+          profileVisibility: profil.profileVisibility,
+          canReceiveMessages: profil.canReceiveMessages
         }
       }
     });
-  } catch (error) {
-    console.error("Error loading profile edit:", error);
-    res.status(500).render("errors/500");
+  } catch (erreur) {
+    console.error("Erreur lors du chargement de l'édition:", erreur);
+    reponse.status(500).render("errors/500");
   }
 });
 
-/**
- * Action: mettre à jour son profil
- */
-profilesRouter.post(
+//////////
+// Sauvegarde les modifications du profil
+// Met à jour les infos personnelles et images (avatar, bannière)
+// Gère aussi les paramètres de confidentialité
+// Retourne: redirect /profiles/:id
+//////////
+routesProfils.post(
   "/:id/edit",
-  requireAuth,
-  upload.fields([
+  exigerAuthentification,
+  telechargement.fields([
     { name: "avatar", maxCount: 1 },
     { name: "banner", maxCount: 1 }
   ]),
-  async (req, res) => {
-    const userId = Number(req.params.id);
+  async (requete, reponse) => {
+    const idUtilisateur = Number(requete.params.id);
 
-    // On ne peut éditer que son propre profil
-    if (!Number.isFinite(userId) || userId !== req.user.id) {
-      return res.redirect("/feed");
+    if (!Number.isFinite(idUtilisateur) || idUtilisateur !== requete.user.id) {
+      return reponse.redirect("/feed");
     }
 
     try {
-      const { displayName, bio, location, website, dateOfBirth, profileVisibility, canReceiveMessages } = req.body;
+      const { displayName, bio, location, website, dateOfBirth, profileVisibility, canReceiveMessages } = requete.body;
 
-      const updates = [];
-      const values = [];
+      const miseAJour = [];
+      const valeurs = [];
 
       if (displayName?.trim()) {
-        updates.push("displayName = ?");
-        values.push(displayName.trim());
+        miseAJour.push("displayName = ?");
+        valeurs.push(displayName.trim());
       }
 
       if (bio !== undefined) {
-        updates.push("bio = ?");
-        values.push(bio?.trim() || null);
+        miseAJour.push("bio = ?");
+        valeurs.push(bio?.trim() || null);
       }
 
       if (location !== undefined) {
-        updates.push("location = ?");
-        values.push(location?.trim() || null);
+        miseAJour.push("location = ?");
+        valeurs.push(location?.trim() || null);
       }
 
       if (website !== undefined) {
-        updates.push("website = ?");
-        values.push(website?.trim() || null);
+        miseAJour.push("website = ?");
+        valeurs.push(website?.trim() || null);
       }
 
-      // Gérer la date de naissance
       if (dateOfBirth && dateOfBirth.trim()) {
-        updates.push("dateOfBirth = ?");
-        values.push(new Date(dateOfBirth));
+        miseAJour.push("dateOfBirth = ?");
+        valeurs.push(new Date(dateOfBirth));
       }
 
-      // Gérer l'avatar uploadé
-      if (req.files?.avatar && req.files.avatar[0]) {
-        updates.push("avatar = ?");
-        values.push("/public/uploads/" + req.files.avatar[0].filename);
+      if (requete.files?.avatar && requete.files.avatar[0]) {
+        miseAJour.push("avatar = ?");
+        valeurs.push("/public/uploads/" + requete.files.avatar[0].filename);
       }
 
-      // Gérer la banner uploadée
-      if (req.files?.banner && req.files.banner[0]) {
-        updates.push("banner = ?");
-        values.push("/public/uploads/" + req.files.banner[0].filename);
+      if (requete.files?.banner && requete.files.banner[0]) {
+        miseAJour.push("banner = ?");
+        valeurs.push("/public/uploads/" + requete.files.banner[0].filename);
       }
 
-      if (updates.length > 0) {
-        updates.push("updatedAt = NOW()");
-        values.push(userId);
+      if (miseAJour.length > 0) {
+        miseAJour.push("updatedAt = NOW()");
+        valeurs.push(idUtilisateur);
         await query(
-          `UPDATE User SET ${updates.join(", ")} WHERE id = ?`,
-          values
+          `UPDATE User SET ${miseAJour.join(", ")} WHERE id = ?`,
+          valeurs
         );
       }
 
-      // Mettre à jour les paramètres de confidentialité
+      // Mettre à jour la confidentialité
       if (profileVisibility || canReceiveMessages !== undefined) {
-        const existingPrivacy = await queryOne(
+        const confidentialiteExistante = await queryOne(
           "SELECT * FROM UserPrivacy WHERE userId = ?",
-          [userId]
+          [idUtilisateur]
         );
 
-        if (existingPrivacy) {
+        if (confidentialiteExistante) {
           await query(
             "UPDATE UserPrivacy SET profileVisibility = ?, canReceiveMessages = ? WHERE userId = ?",
             [
-              profileVisibility || existingPrivacy.profileVisibility,
+              profileVisibility || confidentialiteExistante.profileVisibility,
               canReceiveMessages === 'true' || canReceiveMessages === true,
-              userId
+              idUtilisateur
             ]
           );
         } else {
           await query(
             "INSERT INTO UserPrivacy (userId, profileVisibility, canReceiveMessages) VALUES (?, ?, ?)",
             [
-              userId,
+              idUtilisateur,
               profileVisibility || 'PUBLIC',
               canReceiveMessages === 'true' || canReceiveMessages === true
             ]
@@ -319,10 +320,13 @@ profilesRouter.post(
         }
       }
 
-      res.redirect(`/profiles/${userId}`);
-    } catch (error) {
-      console.error("Error updating profile:", error);
-      res.status(500).render("errors/500");
+      reponse.redirect(`/profiles/${idUtilisateur}`);
+    } catch (erreur) {
+      console.error("Erreur lors de la mise à jour:", erreur);
+      reponse.status(500).render("errors/500");
     }
   }
 );
+
+
+

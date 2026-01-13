@@ -1,102 +1,112 @@
 import express from "express";
-import { requireAuth } from "../auth/auth.middleware.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
 import { query, queryOne } from "../db.js";
-import { createNotification } from "../notifications/notifications.service.js";
+import { creerNotification } from "../notifications/notifications.service.js";
 
-export const groupInvitesRouter = express.Router();
+export const routesInvitationsGroupes = express.Router();
 
-/**
- * POST /groups/:groupId/invite/:userId
- * OWNER / ADMIN only
- * -> crée GroupInvite + notif GROUP_INVITE
- */
-groupInvitesRouter.post("/groups/:groupId/invite/:userId", requireAuth, async (req, res) => {
-  const groupId = Number(req.params.groupId);
-  const toUserId = Number(req.params.userId);
+//////////
+// Invite un utilisateur à rejoindre un groupe
+// Seuls OWNER ou ADMIN peuvent inviter
+// Crée une notification GROUP_INVITE à l'utilisateur
+// Retourne: redirect /groups/:id
+//////////
+routesInvitationsGroupes.post("/groups/:groupId/invite/:userId", exigerAuthentification, async (requete, reponse) => {
+  const idGroupe = Number(requete.params.groupId);
+  const idUtilisateurCible = Number(requete.params.userId);
 
-  if (!Number.isFinite(groupId) || !Number.isFinite(toUserId)) {
-    return res.redirect("/groups");
+  if (!Number.isFinite(idGroupe) || !Number.isFinite(idUtilisateurCible)) {
+    return reponse.redirect("/groups");
   }
 
-  const membership = await queryOne(
+  const adhesion = await queryOne(
     "SELECT * FROM GroupMember WHERE groupId = ? AND userId = ?",
-    [groupId, req.user.id]
+    [idGroupe, requete.user.id]
   );
 
-  if (!membership || !["OWNER", "ADMIN"].includes(membership.role)) {
-    return res.status(403).send("Forbidden");
+  if (!adhesion || !["OWNER", "ADMIN"].includes(adhesion.role)) {
+    return reponse.status(403).send("Forbidden");
   }
 
   try {
     await query(
       "INSERT INTO GroupInvite (groupId, fromUserId, toUserId, createdAt) VALUES (?, ?, ?, NOW())",
-      [groupId, req.user.id, toUserId]
+      [idGroupe, requete.user.id, idUtilisateurCible]
     );
 
-    await createNotification({
+    await creerNotification({
       type: "GROUP_INVITE",
-      toUserId,
-      fromUserId: req.user.id
+      toUserId: idUtilisateurCible,
+      fromUserId: requete.user.id
     });
   } catch (err) {
     // Ignore si déjà invité
   }
 
-  res.redirect(`/groups/${groupId}`);
+  reponse.redirect(`/groups/${idGroupe}`);
 });
 
-/**
- * POST /groups/invites/:inviteId/accept
- * -> auto-join + delete invite + notif owner
- */
-groupInvitesRouter.post("/groups/invites/:inviteId/accept", requireAuth, async (req, res) => {
-  const inviteId = Number(req.params.inviteId);
-  if (!Number.isFinite(inviteId)) return res.redirect("/notifications");
+//////////
+// Accepte une invitation de groupe
+// Crée l'adhésion (MEMBER), supprime l'invitation
+// Notifie le propriétaire du groupe
+// Retourne: redirect /groups/:id
+//////////
+routesInvitationsGroupes.post("/groups/invites/:inviteId/accept", exigerAuthentification, async (requete, reponse) => {
+  const idInvitation = Number(requete.params.inviteId);
+  if (!Number.isFinite(idInvitation)) return reponse.redirect("/notifications");
 
-  const invite = await queryOne(`
+  const invitation = await queryOne(`
     SELECT
       gi.*,
       g.ownerId as group_ownerId
     FROM GroupInvite gi
     JOIN \`Group\` g ON gi.groupId = g.id
     WHERE gi.id = ?
-  `, [inviteId]);
+  `, [idInvitation]);
 
-  if (!invite || invite.toUserId !== req.user.id) {
-    return res.redirect("/notifications");
+  if (!invitation || invitation.toUserId !== requete.user.id) {
+    return reponse.redirect("/notifications");
   }
 
   await query(
     "INSERT INTO GroupMember (groupId, userId, role, joinedAt) VALUES (?, ?, 'MEMBER', NOW())",
-    [invite.groupId, req.user.id]
+    [invitation.groupId, requete.user.id]
   ).catch(() => {});
 
-  await query("DELETE FROM GroupInvite WHERE id = ?", [inviteId]).catch(() => {});
+  await query("DELETE FROM GroupInvite WHERE id = ?", [idInvitation]).catch(() => {});
 
-  await createNotification({
+  await creerNotification({
     type: "GROUP_JOIN",
-    toUserId: invite.group_ownerId,
-    fromUserId: req.user.id
+    toUserId: invitation.group_ownerId,
+    fromUserId: requete.user.id
   });
 
-  res.redirect(`/groups/${invite.groupId}`);
+  reponse.redirect(`/groups/${invitation.groupId}`);
 });
 
-/**
- * POST /groups/invites/:inviteId/refuse
- * -> delete invite
- */
-groupInvitesRouter.post("/groups/invites/:inviteId/refuse", requireAuth, async (req, res) => {
-  const inviteId = Number(req.params.inviteId);
-  if (!Number.isFinite(inviteId)) return res.redirect("/notifications");
+//////////
+// Refuse une invitation de groupe
+// Supprime simplement l'invitation
+// Retourne: redirect /notifications
+//////////
+routesInvitationsGroupes.post("/groups/invites/:inviteId/refuse", exigerAuthentification, async (requete, reponse) => {
+  const idInvitation = Number(requete.params.inviteId);
+  if (!Number.isFinite(idInvitation)) return reponse.redirect("/notifications");
 
-  const invite = await queryOne("SELECT * FROM GroupInvite WHERE id = ?", [inviteId]);
+  const invitation = await queryOne("SELECT * FROM GroupInvite WHERE id = ?", [idInvitation]);
 
-  if (!invite || invite.toUserId !== req.user.id) {
-    return res.redirect("/notifications");
+  if (!invitation || invitation.toUserId !== requete.user.id) {
+    return reponse.redirect("/notifications");
   }
 
-  await query("DELETE FROM GroupInvite WHERE id = ?", [inviteId]).catch(() => {});
+  await query("DELETE FROM GroupInvite WHERE id = ?", [idInvitation]).catch(() => {});
 
-  res.redirect("/notifications");
+  reponse.redirect("/notifications");
 });
+
+
+
+
+
+

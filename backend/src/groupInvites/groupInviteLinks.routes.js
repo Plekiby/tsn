@@ -1,70 +1,77 @@
 import express from "express";
 import crypto from "crypto";
-import { requireAuth } from "../auth/auth.middleware.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
 import { query, queryOne } from "../db.js";
-import { createNotification } from "../notifications/notifications.service.js";
+import { creerNotification } from "../notifications/notifications.service.js";
 
-export const groupInviteLinksRouter = express.Router();
+export const routesLiensInvitationsGroupes = express.Router();
 
-/**
- * POST /groups/:groupId/invite-link
- * OWNER / ADMIN only
- * -> génère un token + redirect vers /groups/:id?inviteToken=...
- */
-groupInviteLinksRouter.post("/groups/:groupId/invite-link", requireAuth, async (req, res) => {
-  const groupId = Number(req.params.groupId);
-  if (!Number.isFinite(groupId)) return res.redirect("/groups");
+//////////
+// Génère un lien d'invitation pour un groupe
+// Seuls OWNER ou ADMIN peuvent créer les liens
+// Génère un token crypto aléatoire
+// Retourne: redirect /groups/:id?inviteToken=TOKEN
+//////////
+routesLiensInvitationsGroupes.post("/groups/:groupId/invite-link", exigerAuthentification, async (requete, reponse) => {
+  const idGroupe = Number(requete.params.groupId);
+  if (!Number.isFinite(idGroupe)) return reponse.redirect("/groups");
 
-  const membership = await queryOne(
+  const adhesion = await queryOne(
     "SELECT * FROM GroupMember WHERE groupId = ? AND userId = ?",
-    [groupId, req.user.id]
+    [idGroupe, requete.user.id]
   );
 
-  if (!membership || !["OWNER", "ADMIN"].includes(membership.role)) {
-    return res.status(403).send("Forbidden");
+  if (!adhesion || !["OWNER", "ADMIN"].includes(adhesion.role)) {
+    return reponse.status(403).send("Forbidden");
   }
 
-  const token = crypto.randomBytes(24).toString("hex");
+  const jeton = crypto.randomBytes(24).toString("hex");
 
   await query(
     "INSERT INTO GroupInviteLink (token, groupId, createdAt) VALUES (?, ?, NOW())",
-    [token, groupId]
+    [jeton, idGroupe]
   );
 
-  res.redirect(`/groups/${groupId}?inviteToken=${token}`);
+  reponse.redirect(`/groups/${idGroupe}?inviteToken=${jeton}`);
 });
 
-/**
- * GET /groups/invite/accept?token=xxx
- * requireAuth: si pas connecté -> tu peux gérer plus tard avec redirect login
- */
-groupInviteLinksRouter.get("/groups/invite/accept", requireAuth, async (req, res) => {
-  const token = String(req.query.token || "");
-  if (!token) return res.redirect("/groups");
+//////////
+// Accepte une invitation via lien jeton
+// Crée l'adhésion au groupe (MEMBER)
+// Notifie le propriétaire du groupe
+// Retourne: redirect /groups/:id
+//////////
+routesLiensInvitationsGroupes.get("/groups/invite/accept", exigerAuthentification, async (requete, reponse) => {
+  const jeton = String(requete.query.token || "");
+  if (!jeton) return reponse.redirect("/groups");
 
-  const invite = await queryOne(`
+  const invitation = await queryOne(`
     SELECT
       gil.*,
       g.ownerId as group_ownerId
     FROM GroupInviteLink gil
     JOIN \`Group\` g ON gil.groupId = g.id
     WHERE gil.token = ?
-  `, [token]);
+  `, [jeton]);
 
-  if (!invite) return res.redirect("/groups");
+  if (!invitation) return reponse.redirect("/groups");
 
-  // join group
   await query(
     "INSERT INTO GroupMember (groupId, userId, role, joinedAt) VALUES (?, ?, 'MEMBER', NOW())",
-    [invite.groupId, req.user.id]
+    [invitation.groupId, requete.user.id]
   ).catch(() => {});
 
-  // notif OWNER
-  await createNotification({
+  await creerNotification({
     type: "GROUP_JOIN",
-    toUserId: invite.group_ownerId,
-    fromUserId: req.user.id
+    toUserId: invitation.group_ownerId,
+    fromUserId: requete.user.id
   });
 
-  res.redirect(`/groups/${invite.groupId}`);
+  reponse.redirect(`/groups/${invitation.groupId}`);
 });
+
+
+
+
+
+

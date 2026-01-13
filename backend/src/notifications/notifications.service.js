@@ -1,7 +1,13 @@
 import { query, queryOne } from "../db.js";
-import { pushToUser } from "../realtime/sse.js";
+import { envoyerAUtilisateur } from "../realtime/sse.js";
 
-export async function createNotification({
+//////////
+// Crée une notification et l'envoie via SSE
+// Récupère le compteur unread et le pousse à l'utilisateur
+// N'envoie pas de notification si l'utilisateur a muté l'auteur
+// Retourne: objet notification complet
+//////////
+export async function creerNotification({
   type,
   toUserId,
   fromUserId = null,
@@ -12,14 +18,22 @@ export async function createNotification({
 }) {
   if (fromUserId && toUserId === fromUserId) return;
 
-  const result = await query(
+  // Vérifier si toUserId a muté fromUserId
+  if (fromUserId) {
+    const estMute = await queryOne(
+      "SELECT * FROM UserMute WHERE muterId = ? AND mutedId = ?",
+      [toUserId, fromUserId]
+    );
+    if (estMute) return;
+  }
+
+  const resultat = await query(
     "INSERT INTO Notification (type, toUserId, fromUserId, postId, commentId, friendRequestId, eventId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
     [type, toUserId, fromUserId, postId, commentId, friendRequestId, eventId]
   );
 
-  const notifId = result.insertId;
+  const idNotif = resultat.insertId;
 
-  // Récupérer les infos complètes pour SSE
   const notif = await queryOne(`
     SELECT
       n.*,
@@ -32,15 +46,15 @@ export async function createNotification({
     LEFT JOIN User u ON n.fromUserId = u.id
     LEFT JOIN Event e ON n.eventId = e.id
     WHERE n.id = ?
-  `, [notifId]);
+  `, [idNotif]);
 
-  const unreadCountResult = await queryOne(
+  const resultatCompteur = await queryOne(
     "SELECT COUNT(*) as count FROM Notification WHERE toUserId = ? AND readAt IS NULL",
     [toUserId]
   );
-  const unreadCount = unreadCountResult ? unreadCountResult.count : 0;
+  const compteurNotifications = resultatCompteur ? resultatCompteur.count : 0;
 
-  pushToUser(toUserId, {
+  envoyerAUtilisateur(toUserId, {
     id: notif.id,
     type: notif.type,
     createdAt: notif.createdAt,
@@ -53,23 +67,56 @@ export async function createNotification({
       title: notif.event_title,
       groupId: notif.event_groupId
     } : null,
-    unreadCount
+    unreadCount: compteurNotifications
   });
 
   return notif;
 }
 
-export async function markAllRead(toUserId) {
+//////////
+// Marque toutes les notifications comme lues
+// Met à jour la colonne readAt pour l'utilisateur
+// Retourne: void
+//////////
+export async function marquerToutCommeLu(idUtilisateur) {
   return query(
     "UPDATE Notification SET readAt = NOW() WHERE toUserId = ? AND readAt IS NULL",
-    [toUserId]
+    [idUtilisateur]
   );
 }
 
-export async function getUnreadCount(toUserId) {
-  const result = await queryOne(
-    "SELECT COUNT(*) as count FROM Notification WHERE toUserId = ? AND readAt IS NULL",
-    [toUserId]
+//////////
+// Obtient le compteur de notifications non lues
+// Compte les notifications avec readAt = NULL
+// Filtre les notifications des utilisateurs mutés
+// Retourne: nombre entier (count)
+//////////
+export async function obtenirCompteurNotifications(idUtilisateur) {
+  // Récupérer les utilisateurs mutés
+  const utilisateursMutesData = await query(
+    "SELECT mutedId FROM UserMute WHERE muterId = ?",
+    [idUtilisateur]
   );
-  return result ? result.count : 0;
+  const idsMutes = utilisateursMutesData.map(m => m.mutedId);
+
+  let clauseExclusion = "";
+  let parametres = [idUtilisateur];
+  
+  if (idsMutes.length > 0) {
+    clauseExclusion = ` AND fromUserId NOT IN (${idsMutes.map(() => '?').join(',')})`;
+    parametres.push(...idsMutes);
+  }
+
+  const resultat = await queryOne(
+    `SELECT COUNT(*) as count FROM Notification WHERE toUserId = ? AND readAt IS NULL${clauseExclusion}`,
+    parametres
+  );
+  return resultat ? resultat.count : 0;
 }
+
+
+
+
+
+
+

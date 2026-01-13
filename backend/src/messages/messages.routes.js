@@ -1,16 +1,17 @@
 import express from "express";
 import { query, queryOne } from "../db.js";
-import { requireAuth } from "../auth/auth.middleware.js";
-import { broadcastMessage } from "../realtime/sse.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
+import { diffuserMessage } from "../realtime/sse.js";
 
-export const messagesRouter = express.Router();
+export const routesMessages = express.Router();
 
-/**
- * Page: liste des conversations
- */
-messagesRouter.get("/", requireAuth, async (req, res) => {
-  // Récupérer toutes les conversations de l'utilisateur
-  const convMembers = await query(`
+//////////
+// Liste toutes les conversations de l'utilisateur authentifié
+// Charge les autres membres, dernier message et comptage des non-lus
+// Retourne: vue messages/index avec conversations
+//////////
+routesMessages.get("/", exigerAuthentification, async (requete, reponse) => {
+  const adhesionisteConvertion = await query(`
     SELECT
       cm.*,
       c.id as conv_id,
@@ -21,15 +22,14 @@ messagesRouter.get("/", requireAuth, async (req, res) => {
     JOIN Conversation c ON cm.conversationId = c.id
     WHERE cm.userId = ?
     ORDER BY c.updatedAt DESC
-  `, [req.user.id]);
+  `, [requete.user.id]);
 
   const conversations = [];
 
-  for (const cm of convMembers) {
-    const convId = cm.conv_id;
+  for (const adhesion of adhesionisteConvertion) {
+    const idConversation = adhesion.conv_id;
 
-    // Récupérer les autres membres
-    const allMembers = await query(`
+    const tousLesMembres = await query(`
       SELECT
         cm.userId,
         u.id as user_id,
@@ -38,18 +38,17 @@ messagesRouter.get("/", requireAuth, async (req, res) => {
       FROM ConversationMember cm
       JOIN User u ON cm.userId = u.id
       WHERE cm.conversationId = ?
-    `, [convId]);
+    `, [idConversation]);
 
-    const otherMembers = allMembers
-      .filter(m => m.userId !== req.user.id)
+    const autreMembres = tousLesMembres
+      .filter(m => m.userId !== requete.user.id)
       .map(m => ({
         id: m.user_id,
         displayName: m.user_displayName,
         avatar: m.user_avatar
       }));
 
-    // Dernier message
-    const lastMsg = await queryOne(`
+    const dernierMessage = await queryOne(`
       SELECT
         m.*,
         u.displayName as sender_displayName
@@ -58,75 +57,101 @@ messagesRouter.get("/", requireAuth, async (req, res) => {
       WHERE m.conversationId = ?
       ORDER BY m.createdAt DESC
       LIMIT 1
-    `, [convId]);
+    `, [idConversation]);
 
-    // Compter les messages non lus
-    const unreadCountResult = await queryOne(`
+    const comptageNonLusResult = await queryOne(`
       SELECT COUNT(*) as count
       FROM Message
       WHERE conversationId = ?
         AND senderId != ?
         AND createdAt > ?
-    `, [convId, req.user.id, cm.lastReadAt || new Date(0)]);
+    `, [idConversation, requete.user.id, adhesion.lastReadAt || new Date(0)]);
 
-    const unreadCount = unreadCountResult ? unreadCountResult.count : 0;
+    const comptageNonLus = comptageNonLusResult ? comptageNonLusResult.count : 0;
 
-    // Récupérer le groupe si nécessaire
-    let groupName = null;
-    if (cm.conv_groupId) {
-      const grp = await queryOne("SELECT name FROM `Group` WHERE id = ?", [cm.conv_groupId]);
-      groupName = grp ? grp.name : null;
+    let nomGroupe = null;
+    if (adhesion.conv_groupId) {
+      const groupe = await queryOne("SELECT name FROM `Group` WHERE id = ?", [adhesion.conv_groupId]);
+      nomGroupe = groupe ? groupe.name : null;
     }
 
     conversations.push({
-      id: convId,
-      isGroup: !!cm.conv_groupId,
-      groupName,
-      otherMembers,
-      lastMessage: lastMsg ? {
-        id: lastMsg.id,
-        content: lastMsg.content,
-        createdAt: lastMsg.createdAt,
+      id: idConversation,
+      isGroup: !!adhesion.conv_groupId,
+      groupName: nomGroupe,
+      otherMembers: autreMembres,
+      lastMessage: dernierMessage ? {
+        id: dernierMessage.id,
+        content: dernierMessage.content,
+        createdAt: dernierMessage.createdAt,
         sender: {
-          displayName: lastMsg.sender_displayName
+          displayName: dernierMessage.sender_displayName
         }
       } : null,
-      unreadCount,
-      updatedAt: cm.conv_updatedAt
+      unreadCount: comptageNonLus,
+      updatedAt: adhesion.conv_updatedAt
     });
   }
 
-  res.render("messages/index", { user: req.user, conversations });
+  reponse.render("messages/index", { user: requete.user, conversations });
 });
 
-/**
- * Action: démarrer une conversation avec un user
- */
-messagesRouter.post("/start/:userId", requireAuth, async (req, res) => {
-  const otherUserId = Number(req.params.userId);
-  const isAjax = req.headers['x-requested-with'] === 'XMLHttpRequest';
+//////////
+// Démarre une conversation avec un autre utilisateur
+// Cherche si conversation existe déjà
+// Crée conversation et membres si n'existe pas
+// Vérifie que l'autre utilisateur accepte les messages directs
+// Retourne: JSON {conversationId} ou redirect /messages/:id
+//////////
+routesMessages.post("/start/:userId", exigerAuthentification, async (requete, reponse) => {
+  const idUtilisateurAutre = Number(requete.params.userId);
+  const estAjax = requete.headers['x-requested-with'] === 'XMLHttpRequest';
 
-  if (!Number.isFinite(otherUserId) || otherUserId === req.user.id) {
-    return isAjax ? res.json({ error: "Invalid user ID" }) : res.redirect("/messages");
+  if (!Number.isFinite(idUtilisateurAutre) || idUtilisateurAutre === requete.user.id) {
+    return estAjax ? reponse.json({ error: "Invalid user id" }) : reponse.redirect("/messages");
   }
 
-  // Vérifier si l'utilisateur peut recevoir des messages
-  const otherUserPrivacy = await queryOne(
-    "SELECT canReceiveMessages FROM UserPrivacy WHERE userId = ?",
-    [otherUserId]
+  // Vérifier si je suis bloqué par cet utilisateur
+  const amJeBloque = await queryOne(
+    "SELECT * FROM UserBlock WHERE blockerId = ? AND blockedId = ?",
+    [idUtilisateurAutre, requete.user.id]
   );
 
-  if (otherUserPrivacy && !otherUserPrivacy.canReceiveMessages) {
-    return res.json({
+  if (amJeBloque) {
+    return reponse.json({
+      error: "Vous ne pouvez pas envoyer de message à cet utilisateur",
+      blocked: true
+    });
+  }
+
+  // Vérifier si je bloque cet utilisateur
+  const estBlocke = await queryOne(
+    "SELECT * FROM UserBlock WHERE blockerId = ? AND blockedId = ?",
+    [requete.user.id, idUtilisateurAutre]
+  );
+
+  if (estBlocke) {
+    return reponse.json({
+      error: "Vous ne pouvez pas envoyer de message à cet utilisateur",
+      blocked: true
+    });
+  }
+
+  const confidentialiteUtilisateur = await queryOne(
+    "SELECT canReceiveMessages FROM UserPrivacy WHERE userId = ?",
+    [idUtilisateurAutre]
+  );
+
+  if (confidentialiteUtilisateur && !confidentialiteUtilisateur.canReceiveMessages) {
+    return reponse.json({
       error: "Cet utilisateur n'accepte pas les messages directs",
       blocked: true
     });
   }
 
-  const ids = [req.user.id, otherUserId].sort((a, b) => a - b);
+  const ids = [requete.user.id, idUtilisateurAutre].sort((a, b) => a - b);
 
-  // Chercher si une conversation existe déjà entre ces 2 users
-  const existingConvs = await query(`
+  const conversationsExistantes = await query(`
     SELECT DISTINCT c.id
     FROM Conversation c
     WHERE c.groupId IS NULL
@@ -134,61 +159,59 @@ messagesRouter.post("/start/:userId", requireAuth, async (req, res) => {
       AND EXISTS (SELECT 1 FROM ConversationMember WHERE conversationId = c.id AND userId = ?)
   `, [ids[0], ids[1]]);
 
-  let convId = null;
+  let idConversation = null;
 
-  if (existingConvs.length > 0) {
-    // Vérifier que c'est bien une conv à 2 personnes
-    const memberCount = await queryOne(
+  if (conversationsExistantes.length > 0) {
+    const compteurMembres = await queryOne(
       "SELECT COUNT(*) as count FROM ConversationMember WHERE conversationId = ?",
-      [existingConvs[0].id]
+      [conversationsExistantes[0].id]
     );
-    if (memberCount && memberCount.count === 2) {
-      convId = existingConvs[0].id;
+    if (compteurMembres && compteurMembres.count === 2) {
+      idConversation = conversationsExistantes[0].id;
     }
   }
 
-  if (!convId) {
-    // Créer une nouvelle conversation
-    const result = await query("INSERT INTO Conversation (createdAt, updatedAt) VALUES (NOW(), NOW())");
-    convId = result.insertId;
+  if (!idConversation) {
+    const resultat = await query("INSERT INTO Conversation (createdAt, updatedAt) VALUES (NOW(), NOW())");
+    idConversation = resultat.insertId;
 
-    // Ajouter les 2 membres
     await query(
       "INSERT INTO ConversationMember (conversationId, userId) VALUES (?, ?), (?, ?)",
-      [convId, ids[0], convId, ids[1]]
+      [idConversation, ids[0], idConversation, ids[1]]
     );
   }
 
-  if (isAjax) {
-    res.json({ conversationId: convId });
+  if (estAjax) {
+    reponse.json({ conversationId: idConversation });
   } else {
-    res.redirect(`/messages/${convId}`);
+    reponse.redirect(`/messages/${idConversation}`);
   }
 });
 
-/**
- * Page: afficher une conversation
- */
-messagesRouter.get("/:id", requireAuth, async (req, res) => {
-  const convId = Number(req.params.id);
-  if (!Number.isFinite(convId)) {
-    return res.redirect("/messages");
+//////////
+// Affiche une conversation avec tous les messages
+// Marque les messages comme lus
+// Gère les conversations de groupe et directes
+// Retourne: vue messages/conversation
+//////////
+routesMessages.get("/:id", exigerAuthentification, async (requete, reponse) => {
+  const idConversation = Number(requete.params.id);
+  if (!Number.isFinite(idConversation)) {
+    return reponse.redirect("/messages");
   }
 
-  const member = await queryOne(
+  const adhesion = await queryOne(
     "SELECT * FROM ConversationMember WHERE conversationId = ? AND userId = ?",
-    [convId, req.user.id]
+    [idConversation, requete.user.id]
   );
 
-  if (!member) {
-    return res.redirect("/messages");
+  if (!adhesion) {
+    return reponse.redirect("/messages");
   }
 
-  // Récupérer la conversation
-  const conv = await queryOne("SELECT * FROM Conversation WHERE id = ?", [convId]);
+  const conversation = await queryOne("SELECT * FROM Conversation WHERE id = ?", [idConversation]);
 
-  // Récupérer tous les membres
-  const allMembers = await query(`
+  const tousLesMembres = await query(`
     SELECT
       cm.userId,
       u.id as user_id,
@@ -197,17 +220,16 @@ messagesRouter.get("/:id", requireAuth, async (req, res) => {
     FROM ConversationMember cm
     JOIN User u ON cm.userId = u.id
     WHERE cm.conversationId = ?
-  `, [convId]);
+  `, [idConversation]);
 
-  const otherMembers = allMembers
-    .filter(m => m.userId !== req.user.id)
+  const autreMembres = tousLesMembres
+    .filter(m => m.userId !== requete.user.id)
     .map(m => ({
       id: m.user_id,
       displayName: m.user_displayName,
       avatar: m.user_avatar
     }));
 
-  // Récupérer les messages
   const messages = await query(`
     SELECT
       m.*,
@@ -219,9 +241,9 @@ messagesRouter.get("/:id", requireAuth, async (req, res) => {
     WHERE m.conversationId = ?
     ORDER BY m.createdAt ASC
     LIMIT 100
-  `, [convId]);
+  `, [idConversation]);
 
-  const messagesData = messages.map(m => ({
+  const donnesMessages = messages.map(m => ({
     id: m.id,
     content: m.content,
     conversationId: m.conversationId,
@@ -234,70 +256,97 @@ messagesRouter.get("/:id", requireAuth, async (req, res) => {
     }
   }));
 
-  // Marquer comme lu
   await query(
     "UPDATE ConversationMember SET lastReadAt = NOW() WHERE conversationId = ? AND userId = ?",
-    [convId, req.user.id]
+    [idConversation, requete.user.id]
   );
 
-  // Récupérer le groupe si nécessaire
-  let groupName = null;
-  if (conv.groupId) {
-    const grp = await queryOne("SELECT name FROM `Group` WHERE id = ?", [conv.groupId]);
-    groupName = grp ? grp.name : null;
+  let nomGroupe = null;
+  if (conversation.groupId) {
+    const groupe = await queryOne("SELECT name FROM `Group` WHERE id = ?", [conversation.groupId]);
+    nomGroupe = groupe ? groupe.name : null;
   }
 
-  res.render("messages/conversation", {
-    user: req.user,
+  reponse.render("messages/conversation", {
+    user: requete.user,
     conversation: {
-      id: conv.id,
-      groupId: conv.groupId,
-      createdAt: conv.createdAt,
-      updatedAt: conv.updatedAt,
-      members: allMembers,
-      messages: messagesData,
-      group: conv.groupId ? { id: conv.groupId, name: groupName } : null
+      id: conversation.id,
+      groupId: conversation.groupId,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      members: tousLesMembres,
+      messages: donnesMessages,
+      group: conversation.groupId ? { id: conversation.groupId, name: nomGroupe } : null
     },
-    otherMembers,
-    isGroup: !!conv.groupId,
-    groupName
+    otherMembers: autreMembres,
+    isGroup: !!conversation.groupId,
+    groupName: nomGroupe
   });
 });
 
-/**
- * Action: envoyer un message
- */
-messagesRouter.post("/:id/send", requireAuth, async (req, res) => {
-  const convId = Number(req.params.id);
-  const content = req.body.content?.trim();
+//////////
+// Envoie un nouveau message dans une conversation
+// Crée le message et met à jour updatedAt de la conversation
+// Diffuse le message en temps réel aux autres membres
+// Retourne: redirect /messages/:id
+//////////
+routesMessages.post("/:id/send", exigerAuthentification, async (requete, reponse) => {
+  const idConversation = Number(requete.params.id);
+  const contenu = requete.body.content?.trim();
 
-  if (!Number.isFinite(convId) || !content) {
-    return res.redirect(`/messages/${convId}`);
+  if (!Number.isFinite(idConversation) || !contenu) {
+    return reponse.redirect(`/messages/${idConversation}`);
   }
 
-  const member = await queryOne(
+  const adhesion = await queryOne(
     "SELECT * FROM ConversationMember WHERE conversationId = ? AND userId = ?",
-    [convId, req.user.id]
+    [idConversation, requete.user.id]
   );
 
-  if (!member) {
-    return res.redirect("/messages");
+  if (!adhesion) {
+    return reponse.redirect("/messages");
   }
 
-  const result = await query(
-    "INSERT INTO Message (content, conversationId, senderId, createdAt) VALUES (?, ?, ?, NOW())",
-    [content, convId, req.user.id]
+  // Vérifier si la conversation est un DM (pas de groupe) et si l'autre personne n'a pas bloqué
+  const conversation = await queryOne(
+    "SELECT * FROM Conversation WHERE id = ?",
+    [idConversation]
   );
 
-  const msgId = result.insertId;
+  if (!conversation.groupId) {
+    // C'est un DM - vérifier le blocage
+    const membres = await query(
+      "SELECT userId FROM ConversationMember WHERE conversationId = ?",
+      [idConversation]
+    );
+
+    const autreMembres = membres.filter(m => m.userId !== requete.user.id);
+
+    for (const autreMembre of autreMembres) {
+      const estBloque = await queryOne(
+        "SELECT * FROM UserBlock WHERE (blockerId = ? AND blockedId = ?) OR (blockerId = ? AND blockedId = ?)",
+        [requete.user.id, autreMembre.userId, autreMembre.userId, requete.user.id]
+      );
+
+      if (estBloque) {
+        return reponse.redirect(`/messages/${idConversation}`);
+      }
+    }
+  }
+
+  const resultat = await query(
+    "INSERT INTO Message (content, conversationId, senderId, createdAt) VALUES (?, ?, ?, NOW())",
+    [contenu, idConversation, requete.user.id]
+  );
+
+  const idMessage = resultat.insertId;
 
   await query(
     "UPDATE Conversation SET updatedAt = NOW() WHERE id = ?",
-    [convId]
+    [idConversation]
   );
 
-  // Récupérer le message complet avec le sender
-  const msg = await queryOne(`
+  const message = await queryOne(`
     SELECT
       m.*,
       u.id as sender_id,
@@ -306,32 +355,31 @@ messagesRouter.post("/:id/send", requireAuth, async (req, res) => {
     FROM Message m
     LEFT JOIN User u ON m.senderId = u.id
     WHERE m.id = ?
-  `, [msgId]);
+  `, [idMessage]);
 
-  // Récupérer les membres pour broadcaster
-  const members = await query(
+  const membres = await query(
     "SELECT userId FROM ConversationMember WHERE conversationId = ?",
-    [convId]
+    [idConversation]
   );
 
-  members.forEach(m => {
-    if (m.userId !== req.user.id) {
-      broadcastMessage(m.userId, {
+  membres.forEach(m => {
+    if (m.userId !== requete.user.id) {
+      diffuserMessage(m.userId, {
         type: "new_message",
-        conversationId: convId,
+        conversationId: idConversation,
         message: {
-          id: msg.id,
-          content: msg.content,
-          createdAt: msg.createdAt,
+          id: message.id,
+          content: message.content,
+          createdAt: message.createdAt,
           sender: {
-            id: msg.sender_id,
-            displayName: msg.sender_displayName,
-            avatar: msg.sender_avatar
+            id: message.sender_id,
+            displayName: message.sender_displayName,
+            avatar: message.sender_avatar
           }
         }
       });
     }
   });
 
-  res.redirect(`/messages/${convId}`);
+  reponse.redirect(`/messages/${idConversation}`);
 });

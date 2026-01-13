@@ -1,133 +1,143 @@
 import express from "express";
 import { query, queryOne } from "../db.js";
-import { requireAuth } from "../auth/auth.middleware.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
 
-export const privacyRouter = express.Router();
+export const routesConfidentialite = express.Router();
 
-/**
- * Bloquer un utilisateur
- */
-privacyRouter.post("/block/:id", requireAuth, async (req, res) => {
-  const targetId = Number(req.params.id);
-  const back = req.get("referer") || "/";
+//////////
+// Bloque un utilisateur
+// Ajoute une entrée dans UserBlock
+// Retourne: redirect vers la page précédente
+//////////
+routesConfidentialite.post("/block/:id", exigerAuthentification, async (requete, reponse) => {
+  const idCible = Number(requete.params.id);
+  const urlPrecedente = requete.get("referer") || "/";
 
-  if (!Number.isFinite(targetId) || targetId === req.user.id) {
-    return res.redirect(back);
+  if (!Number.isFinite(idCible) || idCible === requete.user.id) {
+    return reponse.redirect(urlPrecedente);
   }
 
   try {
     await query(
       "INSERT INTO UserBlock (blockerId, blockedId) VALUES (?, ?)",
-      [req.user.id, targetId]
-    ).catch(() => null); // Ignore si déjà bloqué
+      [requete.user.id, idCible]
+    ).catch(() => null);
 
-    res.redirect(back);
-  } catch (error) {
-    console.error("Error blocking user:", error);
-    res.redirect(back);
+    reponse.redirect(urlPrecedente);
+  } catch (erreur) {
+    console.error("Erreur lors du blocage:", erreur);
+    reponse.redirect(urlPrecedente);
   }
 });
 
-/**
- * Débloquer un utilisateur
- */
-privacyRouter.post("/unblock/:id", requireAuth, async (req, res) => {
-  const targetId = Number(req.params.id);
-  const back = req.get("referer") || "/";
+//////////
+// Débloque un utilisateur
+// Supprime une entrée de UserBlock
+// Retourne: redirect vers la page précédente
+//////////
+routesConfidentialite.post("/unblock/:id", exigerAuthentification, async (requete, reponse) => {
+  const idCible = Number(requete.params.id);
+  const urlPrecedente = requete.get("referer") || "/";
 
-  if (!Number.isFinite(targetId)) {
-    return res.redirect(back);
+  if (!Number.isFinite(idCible)) {
+    return reponse.redirect(urlPrecedente);
   }
 
   try {
     await query(
       "DELETE FROM UserBlock WHERE blockerId = ? AND blockedId = ?",
-      [req.user.id, targetId]
+      [requete.user.id, idCible]
     ).catch(() => null);
 
-    res.redirect(back);
-  } catch (error) {
-    console.error("Error unblocking user:", error);
-    res.redirect(back);
+    reponse.redirect(urlPrecedente);
+  } catch (erreur) {
+    console.error("Erreur lors du déblocage:", erreur);
+    reponse.redirect(urlPrecedente);
   }
 });
 
 /**
- * Mute un utilisateur
+ * Rend muet un utilisateur
  */
-privacyRouter.post("/mute/:id", requireAuth, async (req, res) => {
-  const targetId = Number(req.params.id);
-  const back = req.get("referer") || "/";
+routesConfidentialite.post("/mute/:id", exigerAuthentification, async (requete, reponse) => {
+  const idCible = Number(requete.params.id);
+  const urlPrecedente = requete.get("referer") || "/";
 
-  if (!Number.isFinite(targetId) || targetId === req.user.id) {
-    return res.redirect(back);
+  if (!Number.isFinite(idCible) || idCible === requete.user.id) {
+    return reponse.redirect(urlPrecedente);
   }
 
   try {
     await query(
       "INSERT INTO UserMute (muterId, mutedId) VALUES (?, ?)",
-      [req.user.id, targetId]
+      [requete.user.id, idCible]
     ).catch(() => null);
 
-    res.redirect(back);
-  } catch (error) {
-    console.error("Error muting user:", error);
-    res.redirect(back);
+    reponse.redirect(urlPrecedente);
+  } catch (erreur) {
+    console.error("Erreur lors du rendu muet:", erreur);
+    reponse.redirect(urlPrecedente);
   }
 });
 
 /**
- * Unmute un utilisateur
+ * Retire le mute d'un utilisateur
  */
-privacyRouter.post("/unmute/:id", requireAuth, async (req, res) => {
-  const targetId = Number(req.params.id);
-  const back = req.get("referer") || "/";
+routesConfidentialite.post("/unmute/:id", exigerAuthentification, async (requete, reponse) => {
+  const idCible = Number(requete.params.id);
+  const urlPrecedente = requete.get("referer") || "/";
 
-  if (!Number.isFinite(targetId)) {
-    return res.redirect(back);
+  if (!Number.isFinite(idCible)) {
+    return reponse.redirect(urlPrecedente);
   }
 
   try {
     await query(
       "DELETE FROM UserMute WHERE muterId = ? AND mutedId = ?",
-      [req.user.id, targetId]
+      [requete.user.id, idCible]
     ).catch(() => null);
 
-    res.redirect(back);
-  } catch (error) {
-    console.error("Error unmuting user:", error);
-    res.redirect(back);
+    reponse.redirect(urlPrecedente);
+  } catch (erreur) {
+    console.error("Erreur lors du retrait du mute:", erreur);
+    reponse.redirect(urlPrecedente);
   }
 });
 
 /**
  * Mettre à jour les paramètres de confidentialité du profil
  */
-privacyRouter.post("/profile-settings", requireAuth, async (req, res) => {
-  const { profileVisibility, canReceiveMessages } = req.body;
+routesConfidentialite.post("/profile-settings", exigerAuthentification, async (requete, reponse) => {
+  const { profileVisibility, canReceiveMessages } = requete.body;
 
   try {
     // Vérifier si un enregistrement existe déjà
-    const existing = await queryOne(
+    const existant = await queryOne(
       "SELECT * FROM UserPrivacy WHERE userId = ?",
-      [req.user.id]
+      [requete.user.id]
     );
 
-    if (existing) {
+    if (existant) {
       await query(
         "UPDATE UserPrivacy SET profileVisibility = ?, canReceiveMessages = ? WHERE userId = ?",
-        [profileVisibility || "PUBLIC", canReceiveMessages === "on", req.user.id]
+        [profileVisibility || "PUBLIC", canReceiveMessages === "true" || canReceiveMessages === "on", requete.user.id]
       );
     } else {
       await query(
         "INSERT INTO UserPrivacy (userId, profileVisibility, canReceiveMessages) VALUES (?, ?, ?)",
-        [req.user.id, profileVisibility || "PUBLIC", canReceiveMessages === "on"]
+        [requete.user.id, profileVisibility || "PUBLIC", canReceiveMessages === "true" || canReceiveMessages === "on"]
       );
     }
 
-    res.redirect(`/profiles/${req.user.id}/edit`);
-  } catch (error) {
-    console.error("Error updating privacy settings:", error);
-    res.redirect(`/profiles/${req.user.id}/edit`);
+    reponse.redirect(`/profiles/${requete.user.id}/edit`);
+  } catch (erreur) {
+    console.error("Erreur lors de la mise à jour des paramètres de confidentialité:", erreur);
+    reponse.redirect(`/profiles/${requete.user.id}/edit`);
   }
 });
+
+
+
+
+
+

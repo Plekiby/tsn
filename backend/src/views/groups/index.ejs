@@ -1,6 +1,6 @@
 <%- include("../partials/header", { pageTitle: "Groupes", unreadCount, unreadMessages, user }) %>
 
-<div class="container my-4">
+<div class="container-fluid my-4" style="max-width: 1200px;">
   <div class="row">
     <div class="col-12">
       <h2 class="mb-4">
@@ -10,22 +10,33 @@
       <hr class="mb-4">
 
       <!-- Créer un groupe -->
-      <div class="card mb-4">
+      <div class="card mb-4 shadow-sm">
         <div class="card-header bg-primary text-white">
           <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Créer un groupe</h5>
         </div>
         <div class="card-body">
           <form method="POST" action="/groups">
-            <div class="mb-3">
-              <label for="name" class="form-label">Nom du groupe</label>
-              <input
-                type="text"
-                class="form-control"
-                id="name"
-                name="name"
-                placeholder="Nom du groupe"
-                required
-              />
+            <div class="row">
+              <div class="col-12 col-md-6 mb-3">
+                <label for="name" class="form-label">Nom du groupe</label>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="name"
+                  name="name"
+                  placeholder="Nom du groupe"
+                  required
+                />
+              </div>
+
+              <div class="col-12 col-md-6 mb-3">
+                <label for="privacy" class="form-label">Confidentialité</label>
+                <select class="form-select" id="privacy" name="privacy">
+                  <option value="PUBLIC">🌍 PUBLIC</option>
+                  <option value="PRIVATE">🔒 PRIVÉ</option>
+                  <option value="SECRET">🤐 SECRET</option>
+                </select>
+              </div>
             </div>
 
             <div class="mb-3">
@@ -39,16 +50,7 @@
               ></textarea>
             </div>
 
-            <div class="mb-3">
-              <label for="privacy" class="form-label">Privacy</label>
-              <select class="form-select" id="privacy" name="privacy">
-                <option value="PUBLIC">PUBLIC</option>
-                <option value="PRIVATE">PRIVATE</option>
-                <option value="SECRET">SECRET</option>
-              </select>
-            </div>
-
-            <button type="submit" class="btn btn-primary">
+            <button type="submit" class="btn btn-primary w-100 w-md-auto">
               <i class="bi bi-plus-circle"></i> Créer
             </button>
           </form>
@@ -61,6 +63,9 @@
       <div class="mb-5">
         <h3 class="h5 mb-3">
           <i class="bi bi-collection"></i> Mes groupes
+          <% if (myMemberships && myMemberships.length > 0) { %>
+            <span class="badge bg-secondary"><%= myMemberships.length %></span>
+          <% } %>
         </h3>
 
         <% if (!myMemberships || myMemberships.length === 0) { %>
@@ -71,9 +76,9 @@
           <div class="list-group">
             <% myMemberships.forEach(m => { %>
               <a href="/groups/<%= m.group.id %>" class="list-group-item list-group-item-action">
-                <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <div>
-                    <h6 class="mb-1"><%= m.group.name %></h6>
+                    <h6 class="mb-0"><%= m.group.name %></h6>
                   </div>
                   <span class="badge bg-secondary"><%= m.role %></span>
                 </div>
@@ -89,6 +94,9 @@
       <div>
         <h3 class="h5 mb-3">
           <i class="bi bi-globe"></i> Groupes visibles
+          <% if (groups && groups.length > 0) { %>
+            <span class="badge bg-secondary"><%= groups.length %></span>
+          <% } %>
         </h3>
 
         <% if (!groups || groups.length === 0) { %>
@@ -98,8 +106,8 @@
         <% } else { %>
           <div class="row g-3">
             <% groups.forEach(g => { %>
-              <div class="col-12 col-md-6 col-lg-4">
-                <div class="card h-100">
+              <div class="col-12 col-sm-6 col-lg-4">
+                <div class="card h-100 shadow-sm">
                   <div class="card-body">
                     <h5 class="card-title">
                       <a href="/groups/<%= g.id %>" class="link-primary text-decoration-none">
@@ -108,18 +116,18 @@
                     </h5>
 
                     <% if (g.description) { %>
-                      <p class="card-text text-muted small"><%= g.description %></p>
+                      <p class="card-text text-muted small"><%= g.description.substring(0, 100) %><%= g.description.length > 100 ? '...' : '' %></p>
                     <% } %>
 
-                    <div class="small text-muted mt-2">
-                      <div>
+                    <div class="small text-muted mt-3">
+                      <div class="mb-2">
                         <i class="bi bi-shield"></i> <%= g.privacy %>
                       </div>
-                      <div>
+                      <div class="mb-2">
                         <i class="bi bi-person"></i> <%= g.owner.displayName %>
                       </div>
                       <div>
-                        <i class="bi bi-people"></i> <%= g._count.members %> membres
+                        <i class="bi bi-people"></i> <%= g._count.members %> membre<%= g._count.members > 1 ? 's' : '' %>
                       </div>
                     </div>
                   </div>

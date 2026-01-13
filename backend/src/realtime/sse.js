@@ -1,29 +1,54 @@
-const clients = new Map(); // userId -> Set(res)
+const clients = new Map(); // userId -> Set(reponse)
 
-export function addClient(userId, res) {
-  if (!clients.has(userId)) {
-    clients.set(userId, new Set());
+//////////
+// Ajoute un client SSE pour recevoir les mises à jour
+// Enregistre la connexion reponse dans un Set pour l'utilisateur
+// Retourne: void
+//////////
+export function ajouterClient(idUtilisateur, reponse) {
+  if (!clients.has(idUtilisateur)) {
+    clients.set(idUtilisateur, new Set());
   }
-  clients.get(userId).add(res);
+  clients.get(idUtilisateur).add(reponse);
 }
 
-export function removeClient(userId, res) {
-  const set = clients.get(userId);
-  if (!set) return;
-  set.delete(res);
-  if (set.size === 0) clients.delete(userId);
+//////////
+// Retire un client SSE après déconnexion
+// Supprime la connexion reponse du Set pour l'utilisateur
+// Retourne: void
+//////////
+export function retirerClient(idUtilisateur, reponse) {
+  const ensemble = clients.get(idUtilisateur);
+  if (!ensemble) return;
+  ensemble.delete(reponse);
+  if (ensemble.size === 0) clients.delete(idUtilisateur);
 }
 
-export function pushToUser(userId, payload) {
-  const set = clients.get(userId);
-  if (!set) return;
+//////////
+// Envoie un payload à tous les clients SSE d'un utilisateur
+// Écrit les données JSON dans chaque connexion
+// Retourne: void
+//////////
+export function envoyerAUtilisateur(idUtilisateur, charge) {
+  const ensemble = clients.get(idUtilisateur);
+  if (!ensemble) return;
 
-  const data = `data: ${JSON.stringify(payload)}\n\n`;
-  for (const res of set) {
-    res.write(data);
+  const donnees = `data: ${JSON.stringify(charge)}\n\n`;
+  for (const reponse of ensemble) {
+    reponse.write(donnees);
   }
 }
 
-export function broadcastMessage(userId, payload) {
-  pushToUser(userId, payload);
+//////////
+// Diffuse un message à un utilisateur (alias pour envoyerAUtilisateur)
+// Retourne: void
+//////////
+export function diffuserMessage(idUtilisateur, charge) {
+  envoyerAUtilisateur(idUtilisateur, charge);
 }
+
+
+
+
+
+

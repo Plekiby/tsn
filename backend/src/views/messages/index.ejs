@@ -1,6 +1,6 @@
 <%- include("../partials/header", { pageTitle: "Messages", unreadCount, unreadMessages, user }) %>
 
-<div class="container my-4">
+<div class="container-fluid my-4" style="max-width: 1200px;">
   <div class="row">
     <div class="col-12">
       <h2 class="mb-4">
@@ -17,15 +17,15 @@
 
       <div class="row g-3">
         <% (conversations || []).forEach(conv => { %>
-          <div class="col-12">
-            <div class="card">
-              <a href="/messages/<%= conv.id %>" class="text-decoration-none text-dark">
+          <div class="col-12 col-lg-8 mx-auto">
+            <a href="/messages/<%= conv.id %>" class="text-decoration-none text-dark">
+              <div class="card shadow-sm conversation-card">
                 <div class="card-body">
-                  <div class="d-flex align-items-center">
+                  <div class="d-flex align-items-center gap-3">
                     <!-- Avatar -->
-                    <div class="flex-shrink-0 me-3">
+                    <div class="flex-shrink-0">
                       <% if (conv.isGroup) { %>
-                        <div class="d-flex align-items-center justify-content-center bg-primary text-white rounded-circle" style="width: 50px; height: 50px; font-weight: bold;">
+                        <div class="d-flex align-items-center justify-content-center bg-primary text-white rounded-circle flex-shrink-0" style="width: 50px; height: 50px; font-weight: bold;">
                           <i class="bi bi-people-fill"></i>
                         </div>
                       <% } else { %>
@@ -33,7 +33,7 @@
                         <% if (other?.avatar) { %>
                           <img src="<%= other.avatar %>" class="rounded-circle" style="width: 50px; height: 50px; object-fit: cover;" alt="Avatar">
                         <% } else { %>
-                          <div class="d-flex align-items-center justify-content-center bg-secondary text-white rounded-circle fw-bold" style="width: 50px; height: 50px;">
+                          <div class="d-flex align-items-center justify-content-center bg-secondary text-white rounded-circle fw-bold" style="width: 50px; height: 50px; font-size: 1.2rem;">
                             <%= other?.displayName?.charAt(0)?.toUpperCase() || '?' %>
                           </div>
                         <% } %>
@@ -41,26 +41,26 @@
                     </div>
 
                     <!-- Content -->
-                    <div class="flex-grow-1">
+                    <div class="flex-grow-1 min-width-0">
                       <% if (conv.isGroup) { %>
-                        <h5 class="mb-0"><%= conv.groupName %></h5>
+                        <h5 class="mb-1"><%= conv.groupName %></h5>
                         <small class="text-muted">Groupe</small>
                       <% } else { %>
                         <% const other = conv.otherMembers[0]; %>
-                        <h5 class="mb-0"><%= other?.displayName || 'Utilisateur inconnu' %></h5>
+                        <h5 class="mb-1"><%= other?.displayName || 'Utilisateur inconnu' %></h5>
                         <% if (conv.lastMessage) { %>
-                          <p class="text-muted small mb-0 mt-1">
-                            <%= conv.lastMessage.sender.displayName %>:
-                            <%= conv.lastMessage.content.substring(0, 50) %><%= conv.lastMessage.content.length > 50 ? '...' : '' %>
+                          <p class="text-muted small mb-0">
+                            <strong><%= conv.lastMessage.sender.displayName %>:</strong>
+                            <span class="d-inline d-lg-block text-truncate"><%= conv.lastMessage.content.substring(0, 80) %><%= conv.lastMessage.content.length > 80 ? '...' : '' %></span>
                           </p>
                         <% } %>
                       <% } %>
                     </div>
 
                     <!-- Badge and date -->
-                    <div class="text-end">
+                    <div class="text-end flex-shrink-0">
                       <% if (conv.unreadCount > 0) { %>
-                        <span class="badge messages-badge mb-2"><%= conv.unreadCount %></span>
+                        <span class="badge bg-danger d-block mb-2"><%= conv.unreadCount %></span>
                       <% } %>
                       <div class="small text-muted">
                         <%= new Date(conv.updatedAt).toLocaleDateString() %>
@@ -68,14 +68,35 @@
                     </div>
                   </div>
                 </div>
-              </a>
-            </div>
+              </div>
+            </a>
           </div>
         <% }) %>
       </div>
     </div>
   </div>
 </div>
+
+<style>
+  .conversation-card {
+    transition: all 0.2s ease;
+  }
+
+  .conversation-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+    transform: translateY(-2px);
+  }
+
+  .min-width-0 {
+    min-width: 0;
+  }
+
+  @media (max-width: 576px) {
+    .col-lg-8 {
+      padding: 0 0.5rem;
+    }
+  }
+</style>
 
 <script>
 (function() {

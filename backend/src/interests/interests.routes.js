@@ -1,14 +1,18 @@
 import express from "express";
 import { query, queryOne } from "../db.js";
-import { requireAuth } from "../auth/auth.middleware.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
 
-export const interestsRouter = express.Router();
+export const routesInterets = express.Router();
 
-// list + manage
-interestsRouter.get("/", requireAuth, async (req, res) => {
-  const interests = await query("SELECT * FROM Interest ORDER BY name ASC");
+//////////
+// Affiche tous les intérêts et gère les abonnements utilisateur
+// Charge les intérêts existants et marque ceux de l'utilisateur
+// Retourne: vue interests/index
+//////////
+routesInterets.get("/", exigerAuthentification, async (requete, reponse) => {
+  const tousLesInterets = await query("SELECT * FROM Interest ORDER BY name ASC");
 
-  const mine = await query(`
+  const mesInterets = await query(`
     SELECT
       ui.*,
       i.id as interest_id,
@@ -16,47 +20,61 @@ interestsRouter.get("/", requireAuth, async (req, res) => {
     FROM UserInterest ui
     JOIN Interest i ON ui.interestId = i.id
     WHERE ui.userId = ?
-  `, [req.user.id]);
+  `, [requete.user.id]);
 
-  const mySet = new Set(mine.map(x => x.interestId));
+  const ensembleMesInterets = new Set(mesInterets.map(x => x.interestId));
 
-  res.render("interests/index", {
-    user: req.user,
-    interests,
-    mySet
+  reponse.render("interests/index", {
+    user: requete.user,
+    interests: tousLesInterets,
+    mySet: ensembleMesInterets
   });
 });
 
-// create interest (admin-ish, but ok for demo)
-interestsRouter.post("/", requireAuth, async (req, res) => {
-  const name = (req.body?.name || "").trim();
-  if (!name) return res.redirect("/interests");
+//////////
+// Crée un nouvel intérêt (admin)
+// Insère dans la table Interest
+// Retourne: redirect /interests
+//////////
+routesInterets.post("/", exigerAuthentification, async (requete, reponse) => {
+  const nomInteret = (requete.body?.name || "").trim();
+  if (!nomInteret) return reponse.redirect("/interests");
 
-  await query("INSERT INTO Interest (name) VALUES (?)", [name]).catch(() => {});
-  res.redirect("/interests");
+  await query("INSERT INTO Interest (name) VALUES (?)", [nomInteret]).catch(() => {});
+  reponse.redirect("/interests");
 });
 
-// toggle user interest
-interestsRouter.post("/:id/toggle", requireAuth, async (req, res) => {
-  const interestId = Number(req.params.id);
-  if (!Number.isFinite(interestId)) return res.redirect("/interests");
+//////////
+// Active/désactive un intérêt pour l'utilisateur
+// Insère ou supprime de UserInterest
+// Retourne: redirect /interests
+//////////
+routesInterets.post("/:id/toggle", exigerAuthentification, async (requete, reponse) => {
+  const idInteret = Number(requete.params.id);
+  if (!Number.isFinite(idInteret)) return reponse.redirect("/interests");
 
-  const existing = await queryOne(
+  const existe = await queryOne(
     "SELECT * FROM UserInterest WHERE userId = ? AND interestId = ?",
-    [req.user.id, interestId]
+    [requete.user.id, idInteret]
   );
 
-  if (existing) {
+  if (existe) {
     await query(
       "DELETE FROM UserInterest WHERE userId = ? AND interestId = ?",
-      [req.user.id, interestId]
+      [requete.user.id, idInteret]
     ).catch(() => {});
   } else {
     await query(
       "INSERT INTO UserInterest (userId, interestId) VALUES (?, ?)",
-      [req.user.id, interestId]
+      [requete.user.id, idInteret]
     ).catch(() => {});
   }
 
-  res.redirect("/interests");
+  reponse.redirect("/interests");
 });
+
+
+
+
+
+

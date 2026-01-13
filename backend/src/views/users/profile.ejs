@@ -1,233 +1,252 @@
 <%- include("../partials/header", { pageTitle: profile.displayName + " - TSN", unreadCount, unreadMessages, user }) %>
 
-<!-- Bannière -->
+<!-- Bannière responsive -->
 <% if (profile.banner && canViewPosts) { %>
-  <img src="<%= profile.banner %>" alt="Banner" class="profile-banner w-100" style="height: 250px; object-fit: cover;">
+  <img src="<%= profile.banner %>" alt="Banner" class="profile-banner w-100" style="height: 200px; object-fit: cover;">
 <% } else { %>
-  <div class="profile-banner w-100" style="height: 250px;"></div>
+  <div class="profile-banner w-100" style="height: 200px; background: linear-gradient(135deg, #0061a1 0%, #f4a100 100%);"></div>
 <% } %>
 
-<div class="container">
-  <div class="row">
-    <div class="col-lg-8 offset-lg-2">
-      <!-- Header du profil -->
-      <div class="position-relative" style="margin-top: -80px;">
+<div class="container-fluid my-4" style="max-width: 1000px;">
+  <!-- Header du profil -->
+  <div class="position-relative px-2 px-md-0" style="margin-top: -60px;">
+    <div class="text-center mb-3">
+      <% if (profile.avatar) { %>
+        <img src="<%= profile.avatar %>" alt="Avatar" class="profile-avatar rounded-circle shadow-sm" style="width: 120px; height: 120px; object-fit: cover;">
+      <% } else { %>
+        <div class="profile-avatar bg-primary text-white d-inline-flex align-items-center justify-content-center rounded-circle shadow-sm" style="width: 120px; height: 120px; font-size: 3rem;">
+          <%= profile.displayName.charAt(0).toUpperCase() %>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body">
         <div class="text-center mb-3">
-          <% if (profile.avatar) { %>
-            <img src="<%= profile.avatar %>" alt="Avatar" class="profile-avatar">
+          <h2 class="mb-1"><%= profile.displayName %></h2>
+          <p class="text-muted mb-0">
+            <i class="bi bi-calendar-check"></i> Membre depuis <%= new Date(profile.createdAt).toLocaleDateString() %>
+          </p>
+        </div>
+
+        <!-- Alerte accès restreint -->
+        <% if (!canViewPosts && !isOwnProfile) { %>
+          <div class="alert alert-warning mb-3">
+            <i class="bi bi-lock"></i>
+            <% if (accessRestriction === 'private') { %>
+              Ce profil est privé. Vous ne pouvez voir que les informations publiques.
+            <% } else if (accessRestriction === 'followers') { %>
+              Ce profil est accessible uniquement aux abonnés. Suivez cet utilisateur pour voir son contenu.
+            <% } %>
+          </div>
+        <% } %>
+
+        <!-- Actions -->
+        <div class="d-flex justify-content-center gap-2 mb-4 flex-wrap">
+          <% if (isOwnProfile) { %>
+            <a href="/profiles/<%= profile.id %>/edit" class="btn btn-primary">
+              <i class="bi bi-pencil"></i> Éditer mon profil
+            </a>
           <% } else { %>
-            <div class="profile-avatar bg-primary text-white d-inline-flex align-items-center justify-content-center" style="font-size: 48px;">
-              <%= profile.displayName.charAt(0).toUpperCase() %>
+            <form method="POST" action="/users/<%= profile.id %>/follow" class="d-inline">
+              <button type="submit" class="btn <%= isFollowing ? 'btn-secondary' : 'btn-outline-primary' %>">
+                <i class="bi bi-<%= isFollowing ? 'person-dash' : 'person-plus' %>"></i>
+                <%= isFollowing ? 'Ne plus suivre' : 'Suivre' %>
+              </button>
+            </form>
+            <button type="button" class="btn btn-primary" id="messageBtn" data-user-id="<%= profile.id %>" onclick="handleMessageClick(this)">
+              <i class="bi bi-chat-dots"></i> Message
+            </button>
+            <div class="btn-group" role="group">
+              <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="bi bi-three-dots-vertical"></i>
+              </button>
+              <ul class="dropdown-menu">
+                <li>
+                  <% if (isMuted) { %>
+                    <form method="POST" action="/privacy/unmute/<%= profile.id %>" class="d-inline w-100">
+                      <button type="submit" class="dropdown-item">
+                        <i class="bi bi-volume-up"></i> Unmute
+                      </button>
+                    </form>
+                  <% } else { %>
+                    <form method="POST" action="/privacy/mute/<%= profile.id %>" class="d-inline w-100">
+                      <button type="submit" class="dropdown-item">
+                        <i class="bi bi-volume-mute"></i> Mute
+                      </button>
+                    </form>
+                  <% } %>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                  <% if (isBlocked) { %>
+                    <form method="POST" action="/privacy/unblock/<%= profile.id %>" class="d-inline w-100">
+                      <button type="submit" class="dropdown-item">
+                        <i class="bi bi-hand-thumbs-up"></i> Débloquer
+                      </button>
+                    </form>
+                  <% } else { %>
+                    <form method="POST" action="/privacy/block/<%= profile.id %>" class="d-inline w-100">
+                      <button type="submit" class="dropdown-item text-danger">
+                        <i class="bi bi-exclamation-circle"></i> Bloquer
+                      </button>
+                    </form>
+                  <% } %>
+                </li>
+              </ul>
             </div>
           <% } %>
         </div>
 
-        <div class="card">
-          <div class="card-body">
-            <div class="text-center mb-3">
-              <h2 class="mb-1"><%= profile.displayName %></h2>
-              <p class="text-muted">
-                <i class="bi bi-calendar-check"></i> Membre depuis <%= new Date(profile.createdAt).toLocaleDateString() %>
-              </p>
+        <!-- Stats responsive -->
+        <div class="row text-center mb-4 g-2">
+          <div class="col-6 col-md-4">
+            <div class="p-2 rounded bg-light">
+              <h5 class="fw-bold text-primary mb-0"><%= profile._count.posts %></h5>
+              <small class="text-muted">Posts</small>
             </div>
-
-            <!-- Alerte accès restreint -->
-            <% if (!canViewPosts && !isOwnProfile) { %>
-              <div class="alert alert-warning mb-3">
-                <i class="bi bi-lock"></i>
-                <% if (accessRestriction === 'private') { %>
-                  Ce profil est privé. Vous ne pouvez voir que les informations publiques.
-                <% } else if (accessRestriction === 'followers') { %>
-                  Ce profil est accessible uniquement aux abonnés. Suivez cet utilisateur pour voir son contenu.
-                <% } %>
-              </div>
-            <% } %>
-
-            <!-- Actions -->
-            <div class="d-flex justify-content-center gap-2 mb-4 flex-wrap">
-              <% if (isOwnProfile) { %>
-                <a href="/profiles/<%= profile.id %>/edit" class="btn btn-primary">
-                  <i class="bi bi-pencil"></i> Éditer mon profil
-                </a>
-              <% } else { %>
-                <form method="POST" action="/users/<%= profile.id %>/follow" class="d-inline">
-                  <button type="submit" class="btn <%= isFollowing ? 'btn-secondary' : 'btn-outline-primary' %>">
-                    <i class="bi bi-<%= isFollowing ? 'person-dash' : 'person-plus' %>"></i>
-                    <%= isFollowing ? 'Ne plus suivre' : 'Suivre' %>
-                  </button>
-                </form>
-                <button type="button" class="btn btn-primary" id="messageBtn" data-user-id="<%= profile.id %>" onclick="handleMessageClick(this)">
-                  <i class="bi bi-chat-dots"></i> Message
-                </button>
-                <div class="btn-group" role="group">
-                  <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
-                    <i class="bi bi-three-dots-vertical"></i>
-                  </button>
-                  <ul class="dropdown-menu">
-                    <li>
-                      <% if (isMuted) { %>
-                        <form method="POST" action="/privacy/unmute/<%= profile.id %>" class="d-inline">
-                          <button type="submit" class="dropdown-item">
-                            <i class="bi bi-volume-up"></i> Unmute
-                          </button>
-                        </form>
-                      <% } else { %>
-                        <form method="POST" action="/privacy/mute/<%= profile.id %>" class="d-inline">
-                          <button type="submit" class="dropdown-item">
-                            <i class="bi bi-volume-mute"></i> Mute
-                          </button>
-                        </form>
-                      <% } %>
-                    </li>
-                    <li>
-                      <% if (isBlocked) { %>
-                        <form method="POST" action="/privacy/unblock/<%= profile.id %>" class="d-inline">
-                          <button type="submit" class="dropdown-item">
-                            <i class="bi bi-hand-thumbs-up"></i> Débloquer
-                          </button>
-                        </form>
-                      <% } else { %>
-                        <form method="POST" action="/privacy/block/<%= profile.id %>" class="d-inline">
-                          <button type="submit" class="dropdown-item text-danger">
-                            <i class="bi bi-exclamation-circle"></i> Bloquer
-                          </button>
-                        </form>
-                      <% } %>
-                    </li>
-                  </ul>
-                </div>
-              <% } %>
-            </div>
-
-            <!-- Stats (sans liens si accès restreint) -->
-            <div class="row text-center mb-4">
-              <div class="col-4">
-                <h4 class="fw-bold text-primary"><%= profile._count.posts %></h4>
-                <small class="text-muted">Posts</small>
-              </div>
-              <div class="col-4">
-                <% if (canViewPosts) { %>
-                  <a href="/friends?tab=followers&userId=<%= profile.id %>" style="text-decoration: none; color: inherit;">
-                    <h4 class="fw-bold text-primary"><%= profile._count.followers %></h4>
-                    <small class="text-muted">Followers</small>
-                  </a>
-                <% } else { %>
-                  <h4 class="fw-bold text-primary"><%= profile._count.followers %></h4>
-                  <small class="text-muted">Followers</small>
-                <% } %>
-              </div>
-              <div class="col-4">
-                <% if (canViewPosts) { %>
-                  <a href="/friends?tab=following&userId=<%= profile.id %>" style="text-decoration: none; color: inherit;">
-                    <h4 class="fw-bold text-primary"><%= profile._count.following %></h4>
-                    <small class="text-muted">Following</small>
-                  </a>
-                <% } else { %>
-                  <h4 class="fw-bold text-primary"><%= profile._count.following %></h4>
-                  <small class="text-muted">Following</small>
-                <% } %>
-              </div>
-            </div>
-
-            <!-- Bio (visible seulement si accès autorisé) -->
-            <% if (canViewPosts && profile.bio) { %>
-              <div class="alert alert-light mb-4">
-                <p class="mb-0"><%= profile.bio %></p>
-              </div>
-            <% } %>
-
-            <!-- Détails (visibles seulement si accès autorisé) -->
+          </div>
+          <div class="col-6 col-md-4">
             <% if (canViewPosts) { %>
-              <div class="mb-4">
-                <% if (profile.location) { %>
-                  <div class="mb-2">
-                    <i class="bi bi-geo-alt text-primary"></i>
-                    <strong>Localisation:</strong> <%= profile.location %>
-                  </div>
-                <% } %>
-                <% if (profile.website) { %>
-                  <div class="mb-2">
-                    <i class="bi bi-link-45deg text-primary"></i>
-                    <strong>Site web:</strong>
-                    <a href="<%= profile.website %>" target="_blank" rel="noopener" class="link-primary">
-                      <%= profile.website %>
-                    </a>
-                  </div>
-                <% } %>
-                <% if (profile.dateOfBirth) { %>
-                  <div class="mb-2">
-                    <i class="bi bi-cake text-primary"></i>
-                    <strong>Anniversaire:</strong> <%= new Date(profile.dateOfBirth).toLocaleDateString() %>
-                  </div>
-                <% } %>
-              </div>
-
-              <!-- Intérêts -->
-              <% if (interests && interests.length > 0) { %>
-                <div>
-                  <h6 class="fw-bold mb-3">
-                    <i class="bi bi-star text-primary"></i> Intérêts
-                  </h6>
-                  <div class="d-flex flex-wrap gap-2">
-                    <% interests.forEach(interest => { %>
-                      <span class="badge interest-tag px-3 py-2">
-                        <%= interest %>
-                      </span>
-                    <% }) %>
-                  </div>
+              <a href="/friends?tab=followers&userId=<%= profile.id %>" style="text-decoration: none; color: inherit;">
+                <div class="p-2 rounded bg-light">
+                  <h5 class="fw-bold text-primary mb-0"><%= profile._count.followers %></h5>
+                  <small class="text-muted">Followers</small>
                 </div>
-              <% } %>
+              </a>
+            <% } else { %>
+              <div class="p-2 rounded bg-light">
+                <h5 class="fw-bold text-primary mb-0"><%= profile._count.followers %></h5>
+                <small class="text-muted">Followers</small>
+              </div>
+            <% } %>
+          </div>
+          <div class="col-6 col-md-4">
+            <% if (canViewPosts) { %>
+              <a href="/friends?tab=following&userId=<%= profile.id %>" style="text-decoration: none; color: inherit;">
+                <div class="p-2 rounded bg-light">
+                  <h5 class="fw-bold text-primary mb-0"><%= profile._count.following %></h5>
+                  <small class="text-muted">Following</small>
+                </div>
+              </a>
+            <% } else { %>
+              <div class="p-2 rounded bg-light">
+                <h5 class="fw-bold text-primary mb-0"><%= profile._count.following %></h5>
+                <small class="text-muted">Following</small>
+              </div>
             <% } %>
           </div>
         </div>
 
-        <!-- Section Publications -->
-        <% if (canViewPosts) { %>
-          <div class="card mt-4">
-            <div class="card-body">
-              <h5 class="card-title">
-                <i class="bi bi-journal-text text-primary"></i> Publications récentes
-              </h5>
-              <% if (posts && posts.length > 0) { %>
-                <div class="posts-list">
-                  <% posts.forEach(post => { %>
-                    <div class="card mb-3">
-                      <div class="card-body">
-                        <p class="card-text"><%= post.content %></p>
-                        <div class="d-flex justify-content-between align-items-center text-muted small">
-                          <span><%= new Date(post.createdAt).toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) %></span>
-                          <div class="d-flex gap-3">
-                            <span>
-                              <i class="bi bi-heart"></i> <%= post._count.likes %>
-                            </span>
-                            <span>
-                              <i class="bi bi-chat-dots"></i> <%= post._count.comments %>
-                            </span>
-                          </div>
-                        </div>
-                        <div class="mt-2">
-                          <a href="/feed" class="btn btn-sm btn-outline-primary">Voir plus</a>
-                        </div>
-                      </div>
-                    </div>
-                  <% }) %>
-                </div>
-              <% } else { %>
-                <p class="text-muted">Aucune publication pour le moment.</p>
-              <% } %>
-            </div>
+        <!-- Bio -->
+        <% if (canViewPosts && profile.bio) { %>
+          <div class="alert alert-light mb-4">
+            <p class="mb-0"><i class="bi bi-quote"></i> <%= profile.bio %></p>
           </div>
+        <% } %>
+
+        <!-- Détails -->
+        <% if (canViewPosts) { %>
+          <div class="row g-3 mb-4">
+            <% if (profile.location) { %>
+              <div class="col-12">
+                <i class="bi bi-geo-alt text-primary"></i>
+                <strong>Localisation:</strong> <%= profile.location %>
+              </div>
+            <% } %>
+            <% if (profile.website) { %>
+              <div class="col-12">
+                <i class="bi bi-link-45deg text-primary"></i>
+                <strong>Site web:</strong>
+                <a href="<%= profile.website %>" target="_blank" rel="noopener" class="link-primary">
+                  <%= profile.website %>
+                </a>
+              </div>
+            <% } %>
+            <% if (profile.dateOfBirth) { %>
+              <div class="col-12">
+                <i class="bi bi-cake text-primary"></i>
+                <strong>Anniversaire:</strong> <%= new Date(profile.dateOfBirth).toLocaleDateString() %>
+              </div>
+            <% } %>
+          </div>
+
+          <!-- Intérêts -->
+          <% if (interests && interests.length > 0) { %>
+            <div>
+              <h6 class="fw-bold mb-3">
+                <i class="bi bi-star text-primary"></i> Intérêts (<%= interests.length %>)
+              </h6>
+              <div class="d-flex flex-wrap gap-2">
+                <% interests.forEach(interest => { %>
+                  <span class="badge bg-primary px-3 py-2">
+                    <%= interest %>
+                  </span>
+                <% }) %>
+              </div>
+            </div>
+          <% } %>
         <% } %>
       </div>
     </div>
+
+    <!-- Section Publications -->
+    <% if (canViewPosts) { %>
+      <div class="card mt-4 shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title mb-3">
+            <i class="bi bi-journal-text text-primary"></i> Publications récentes
+          </h5>
+          <% if (posts && posts.length > 0) { %>
+            <div class="posts-list">
+              <% posts.forEach(post => { %>
+                <div class="card mb-3 border-light">
+                  <div class="card-body">
+                    <p class="card-text"><%= post.content %></p>
+                    <div class="d-flex justify-content-between align-items-center text-muted small flex-wrap gap-2">
+                      <span>
+                        <i class="bi bi-calendar"></i> <%= new Date(post.createdAt).toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) %>
+                      </span>
+                      <div class="d-flex gap-3">
+                        <span><i class="bi bi-heart"></i> <%= post._count.likes %></span>
+                        <span><i class="bi bi-chat-dots"></i> <%= post._count.comments %></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              <% }) %>
+            </div>
+          <% } else { %>
+            <p class="text-muted"><i class="bi bi-info-circle"></i> Aucune publication pour le moment.</p>
+          <% } %>
+        </div>
+      </div>
+    <% } %>
   </div>
 </div>
+
+<style>
+  .profile-avatar {
+    border: 4px solid white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  @media (max-width: 576px) {
+    .profile-banner {
+      height: 150px !important;
+    }
+    
+    .profile-avatar {
+      width: 100px !important;
+      height: 100px !important;
+    }
+  }
+</style>
 
 <script>
 function handleMessageClick(btn) {
   const userId = btn.getAttribute('data-user-id');
   
-  // Envoi AJAX pour vérifier les permissions
   fetch('/messages/start/' + userId, {
     method: 'POST',
     headers: { 
@@ -238,25 +257,18 @@ function handleMessageClick(btn) {
   .then(res => res.json())
   .then(data => {
     if (data.blocked) {
-      // Afficher une alerte rouge si bloqué
-      const existingAlert = document.querySelector('.alert-danger');
-      if (existingAlert) existingAlert.remove();
-      
       const alert = document.createElement('div');
       alert.className = 'alert alert-danger alert-dismissible fade show';
       alert.innerHTML = `
         <i class="bi bi-exclamation-triangle"></i> ${data.error}
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
       `;
-      document.querySelector('.card').insertAdjacentElement('beforeend', alert);
+      document.querySelector('.card').insertAdjacentElement('afterend', alert);
     } else if (data.conversationId) {
-      // Redirection vers la conversation
       window.location.href = '/messages/' + data.conversationId;
     }
   })
-  .catch(err => {
-    console.error('Erreur:', err);
-  });
+  .catch(err => console.error('Erreur:', err));
 }
 </script>
 

@@ -1,28 +1,11 @@
 <%- include("../partials/header", { pageTitle: "Feed - TSN", unreadCount, unreadMessages, user }) %>
 
-<div class="container">
+<div class="container-fluid" style="max-width: 1200px;">
   <div class="row">
-    <div class="col-lg-3 d-none d-lg-block">
-      <div class="card sticky-top" style="top: 80px;">
-        <div class="card-body">
-          <h6 class="text-muted"><i class="bi bi-compass"></i> Navigation</h6>
-          <div class="d-grid gap-2 mt-3">
-            <a href="/users/recommendations" class="btn btn-sm btn-outline-primary">
-              <i class="bi bi-person-plus"></i> Recommandations
-            </a>
-            <a href="/interests" class="btn btn-sm btn-outline-primary">
-              <i class="bi bi-star"></i> Intérêts
-            </a>
-            <a href="/groups" class="btn btn-sm btn-outline-primary">
-              <i class="bi bi-collection"></i> Groupes
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-lg-6">
-      <div class="card mb-3">
+    <!-- Colonne principale: Posts -->
+    <div class="col-lg-8 mx-auto">
+      <!-- Création de post -->
+      <div class="card mb-4 shadow-sm">
         <div class="card-body">
           <h5 class="card-title"><i class="bi bi-pencil-square text-primary"></i> Nouveau post</h5>
           <form method="POST" action="/posts">
@@ -51,39 +34,52 @@
       <% } %>
 
       <% (posts || []).forEach(p => { %>
-        <div class="card mb-3">
+        <div class="card mb-4 shadow-sm post-card">
           <div class="card-body">
+            <!-- Infos auteur -->
             <div class="d-flex align-items-center mb-3">
               <% if (p.author.avatar) { %>
-                <img src="<%= p.author.avatar %>" class="profile-avatar-sm me-2">
+                <img src="<%= p.author.avatar %>" class="profile-avatar-sm me-3" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
               <% } else { %>
-                <div class="profile-avatar-sm bg-primary text-white d-flex align-items-center justify-content-center fw-bold me-2">
+                <div class="profile-avatar-sm bg-primary text-white d-flex align-items-center justify-content-center fw-bold me-3" style="width: 48px; height: 48px; border-radius: 50%;">
                   <%= p.author.displayName.charAt(0).toUpperCase() %>
                 </div>
               <% } %>
-              <div>
+              <div class="flex-grow-1">
                 <h6 class="mb-0">
-                  <a href="/profiles/<%= p.authorId %>" class="link-primary">
+                  <a href="/profiles/<%= p.authorId %>" class="link-primary text-decoration-none">
                     <%= p.author.displayName %>
                   </a>
                 </h6>
                 <small class="text-muted">
                   <%= p.visibility %>
                   <% if (p.group) { %>
-                    · <a href="/groups/<%= p.group.id %>"><%= p.group.name %></a>
+                    · <a href="/groups/<%= p.group.id %>" class="text-decoration-none"><%= p.group.name %></a>
                   <% } %>
                 </small>
               </div>
             </div>
 
-            <% if (debug && p.debugScore) { %>
-              <div class="alert alert-secondary small">
-                Score: <%= p.debugScore.score.toFixed(2) %>
+            <!-- Contenu -->
+            <p class="mb-3"><%= p.content %></p>
+
+            <!-- Score debug si activé -->
+            <% if (debug && p.debugScore && p.debugScore.scoreTotal !== undefined) { %>
+              <div class="alert alert-secondary small mb-3">
+                <strong>Score Total: <%= p.debugScore.scoreTotal.toFixed(2) %></strong>
+                <div style="font-size: 0.85rem; margin-top: 0.5rem;">
+                  Relation: <%= p.debugScore.scoreRelation %> pts |
+                  Engagement: <%= p.debugScore.scoreEngagement %> pts |
+                  Fraîcheur: <%= (p.debugScore.scoreRecence || 0).toFixed(1) %> pts |
+                  Intérêts: <%= p.debugScore.scoreInterets %> pts (<%= p.debugScore.interetsCommuns %> en commun)
+                  <% if (p.debugScore.bonusGroupe) { %> |
+                  Groupe: <%= p.debugScore.bonusGroupe %> pts
+                  <% } %>
+                </div>
               </div>
             <% } %>
 
-            <p><%= p.content %></p>
-
+            <!-- Actions -->
             <div class="d-flex gap-3 mb-3">
               <form method="POST" action="/posts/<%= p.id %>/like" class="d-inline">
                 <button type="submit" class="btn btn-sm btn-outline-danger">
@@ -95,6 +91,7 @@
               </span>
             </div>
 
+            <!-- Commentaire -->
             <form method="POST" action="/posts/<%= p.id %>/comments" class="mb-3">
               <div class="input-group input-group-sm">
                 <input type="text" name="content" class="form-control" placeholder="Commenter..." maxlength="1000" required>
@@ -102,54 +99,113 @@
               </div>
             </form>
 
+            <!-- Commentaires -->
             <% if (p.comments && p.comments.length > 0) { %>
-              <% p.comments.forEach(c => { %>
-                <div class="d-flex gap-2 mb-2">
-                  <% if (c.user.avatar) { %>
-                    <img src="<%= c.user.avatar %>" class="profile-avatar-xs">
-                  <% } else { %>
-                    <div class="profile-avatar-xs bg-secondary text-white d-flex align-items-center justify-content-center">
-                      <%= c.user.displayName.charAt(0) %>
-                    </div>
-                  <% } %>
-                  <div class="flex-grow-1">
-                    <div class="bg-light p-2 rounded">
-                      <strong><a href="/profiles/<%= c.userId %>"><%= c.user.displayName %></a></strong>
-                      <small class="text-muted">· <%= new Date(c.createdAt).toLocaleString() %></small>
-                      <p class="mb-0"><%= c.content %></p>
-                    </div>
-                    <% if (user && (user.id === c.userId || user.id === p.authorId)) { %>
-                      <form method="POST" action="/comments/<%= c.id %>/delete" class="d-inline">
-                        <button type="submit" class="btn btn-link btn-sm text-danger p-0">Supprimer</button>
-                      </form>
+              <div class="mt-3 pt-3 border-top">
+                <% p.comments.forEach(c => { %>
+                  <div class="d-flex gap-2 mb-2">
+                    <% if (c.user.avatar) { %>
+                      <img src="<%= c.user.avatar %>" class="profile-avatar-xs" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                    <% } else { %>
+                      <div class="profile-avatar-xs bg-secondary text-white d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; border-radius: 50%; font-size: 0.8rem;">
+                        <%= c.user.displayName.charAt(0) %>
+                      </div>
                     <% } %>
+                    <div class="flex-grow-1">
+                      <div class="bg-light p-2 rounded">
+                        <strong><a href="/profiles/<%= c.userId %>" class="text-decoration-none"><%= c.user.displayName %></a></strong>
+                        <small class="text-muted">· <%= new Date(c.createdAt).toLocaleString() %></small>
+                        <p class="mb-0"><%= c.content %></p>
+                      </div>
+                      <% if (user && (user.id === c.userId || user.id === p.authorId)) { %>
+                        <form method="POST" action="/comments/<%= c.id %>/delete" class="d-inline">
+                          <button type="submit" class="btn btn-link btn-sm text-danger p-0">Supprimer</button>
+                        </form>
+                      <% } %>
+                    </div>
                   </div>
-                </div>
-              <% }) %>
+                <% }) %>
+              </div>
             <% } %>
           </div>
         </div>
       <% }) %>
     </div>
 
-    <div class="col-lg-3 d-none d-lg-block">
-      <div class="card">
-        <div class="card-body">
-          <h6 class="text-muted"><i class="bi bi-gear"></i> Options</h6>
-          <div class="d-flex flex-column gap-2 mt-3">
-            <a href="/posts/feed" class="btn btn-sm btn-outline-secondary">
-              <i class="bi bi-arrow-clockwise"></i> Recharger
-            </a>
-            <% if (debug) { %>
-              <a href="/posts/feed" class="btn btn-sm btn-secondary">Debug: ON</a>
-            <% } else { %>
-              <a href="/posts/feed?debug=1" class="btn btn-sm btn-outline-secondary">Debug</a>
-            <% } %>
+    <!-- Sidebar droit: Options -->
+    <div class="col-lg-4 mt-4 mt-lg-0">
+      <div class="position-sticky" style="top: 100px;">
+        <div class="card shadow-sm mb-3">
+          <div class="card-body">
+            <h6 class="text-muted mb-3"><i class="bi bi-sliders"></i> Options du Feed</h6>
+            <div class="d-flex flex-column gap-2">
+              <a href="/posts/feed" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-arrow-clockwise"></i> Recharger
+              </a>
+              <% if (debug) { %>
+                <a href="/posts/feed" class="btn btn-sm btn-success">
+                  <i class="bi bi-bug"></i> Debug: ACTIVÉ
+                </a>
+              <% } else { %>
+                <a href="/posts/feed?debug=1" class="btn btn-sm btn-outline-secondary">
+                  <i class="bi bi-bug"></i> Activer Debug
+                </a>
+              <% } %>
+            </div>
+          </div>
+        </div>
+
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h6 class="text-muted mb-3"><i class="bi bi-compass"></i> Découvrir</h6>
+            <div class="d-flex flex-column gap-2">
+              <a href="/users/recommendations" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-person-plus"></i> Recommandations
+              </a>
+              <a href="/interests" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-star"></i> Intérêts
+              </a>
+              <a href="/groups" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-collection"></i> Groupes
+              </a>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </div>
 </div>
+
+<style>
+  .post-card {
+    transition: all 0.3s ease;
+  }
+
+  .post-card:hover {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12) !important;
+  }
+
+  .profile-avatar-sm {
+    width: 48px;
+    height: 48px;
+    font-size: 1.2rem;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .profile-avatar-xs {
+    width: 32px;
+    height: 32px;
+    font-size: 0.8rem;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  @media (max-width: 992px) {
+    .col-lg-4 {
+      order: -1;
+    }
+  }
+</style>
 
 <%- include("../partials/footer") %>

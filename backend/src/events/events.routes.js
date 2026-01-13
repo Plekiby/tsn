@@ -1,80 +1,79 @@
 import express from "express";
-import { requireAuth } from "../auth/auth.middleware.js";
+import { exigerAuthentification } from "../auth/auth.middleware.js";
 import { query, queryOne } from "../db.js";
-import { createNotification } from "../notifications/notifications.service.js";
+import { creerNotification } from "../notifications/notifications.service.js";
 
-export const eventsRouter = express.Router();
+export const routesEvenements = express.Router();
 
-/**
- * POST /events/:id/rsvp
- * body: { status: GOING|DECLINED }
- *
- * Règles:
- * - être membre du groupe de l'event
- * - upsert EventAttendee
- * - notif au creator: EVENT_RSVP (sauf si creator lui-même)
- */
-eventsRouter.post("/:id/rsvp", requireAuth, async (req, res) => {
-  const eventId = Number(req.params.id);
-  const status = String(req.body?.status || "GOING").toUpperCase();
+//////////
+// Enregistre la participation à un événement (GOING ou DECLINED)
+// Vérifie que l'utilisateur est membre du groupe contenant l'événement
+// Upsert l'état de participation (create ou update)
+// Envoie une notification au créateur de l'événement
+// Retourne: JSON {success, goingCount, status} ou redirect /groups/:id
+//////////
+routesEvenements.post("/:id/rsvp", exigerAuthentification, async (requete, reponse) => {
+  const idEvenement = Number(requete.params.id);
+  const statut = String(requete.body?.status || "GOING").toUpperCase();
 
-  const allowed = new Set(["GOING", "DECLINED"]);
-  const safeStatus = allowed.has(status) ? status : "GOING";
+  const statutsAutorises = new Set(["GOING", "DECLINED"]);
+  const statutSecurise = statutsAutorises.has(statut) ? statut : "GOING";
 
-  if (!Number.isFinite(eventId)) return res.redirect("/posts/feed");
+  if (!Number.isFinite(idEvenement)) return reponse.redirect("/posts/feed");
 
-  const ev = await queryOne(
+  const evenement = await queryOne(
     "SELECT id, groupId, creatorId FROM Event WHERE id = ?",
-    [eventId]
+    [idEvenement]
   );
-  if (!ev) return res.redirect("/posts/feed");
+  if (!evenement) return reponse.redirect("/posts/feed");
 
-  // membership gate
-  const member = await queryOne(
+  const membre = await queryOne(
     "SELECT * FROM GroupMember WHERE groupId = ? AND userId = ?",
-    [ev.groupId, req.user.id]
+    [evenement.groupId, requete.user.id]
   );
-  if (!member) return res.status(403).send("Forbidden");
+  if (!membre) return reponse.status(403).send("Forbidden");
 
-  // Upsert: vérifier si existe déjà
-  const existing = await queryOne(
+  const existant = await queryOne(
     "SELECT * FROM EventAttendee WHERE eventId = ? AND userId = ?",
-    [eventId, req.user.id]
+    [idEvenement, requete.user.id]
   );
 
-  if (existing) {
+  if (existant) {
     await query(
       "UPDATE EventAttendee SET status = ? WHERE eventId = ? AND userId = ?",
-      [safeStatus, eventId, req.user.id]
+      [statutSecurise, idEvenement, requete.user.id]
     );
   } else {
     await query(
       "INSERT INTO EventAttendee (eventId, userId, status) VALUES (?, ?, ?)",
-      [eventId, req.user.id, safeStatus]
+      [idEvenement, requete.user.id, statutSecurise]
     );
   }
 
-  // Récupérer le nombre de participants GOING
-  const goingCountResult = await queryOne(
+  const resultCompteur = await queryOne(
     "SELECT COUNT(*) as count FROM EventAttendee WHERE eventId = ? AND status = 'GOING'",
-    [eventId]
+    [idEvenement]
   );
-  const goingCount = goingCountResult ? goingCountResult.count : 0;
+  const compteurGoing = resultCompteur ? resultCompteur.count : 0;
 
-  // notif au creator (si pas lui-même)
-  if (ev.creatorId !== req.user.id) {
-    await createNotification({
+  if (evenement.creatorId !== requete.user.id) {
+    await creerNotification({
       type: "EVENT_RSVP",
-      toUserId: ev.creatorId,
-      fromUserId: req.user.id,
-      eventId: ev.id
+      toUserId: evenement.creatorId,
+      fromUserId: requete.user.id,
+      eventId: evenement.id
     });
   }
 
-  // Si AJAX, retourner JSON
-  if (req.headers['x-requested-with'] === 'XMLHttpRequest') {
-    return res.json({ success: true, goingCount, status: safeStatus });
+  if (requete.headers['x-requested-with'] === 'XMLHttpRequest') {
+    return reponse.json({ success: true, goingCount: compteurGoing, status: statutSecurise });
   }
 
-  res.redirect(`/groups/${ev.groupId}`);
+  reponse.redirect(`/groups/${evenement.groupId}`);
 });
+
+
+
+
+
+

@@ -1,32 +1,42 @@
-import { assertCanComment } from "./comments.service.js";
+import { verifierPeuxCommenter } from "./comments.service.js";
 
-export async function createComment(req, res) {
-  const prisma = req.prisma;
-  const userId = req.user.id;
+//////////
+// Crée un nouveau commentaire sur une publication
+// Valide le contenu (non-vide, max 1000 caractères)
+// Vérifie les droits de commenter via verifierPeuxCommenter()
+// Injecte userId, postId et contenu en base de données
+// Retourne: redirect back (vers la page d'origine)
+//////////
+export async function creerCommentaire(requete, reponse) {
+  const idUtilisateur = requete.user.id;
 
-  const postId = Number(req.params.postId);
-  const content = (req.body.content || "").trim();
+  const idPublication = Number(requete.params.postId);
+  const contenu = (requete.body.content || "").trim();
 
-  if (!content) return res.redirect("back");
-  if (content.length > 1000) return res.redirect("back");
+  if (!contenu) return reponse.redirect("back");
+  if (contenu.length > 1000) return reponse.redirect("back");
 
-  await assertCanComment(prisma, userId, postId);
+  await verifierPeuxCommenter(requete.prisma, idUtilisateur, idPublication);
 
-  await prisma.comment.create({
-    data: { content, postId, userId },
+  await requete.prisma.comment.create({
+    data: { content: contenu, postId: idPublication, userId: idUtilisateur },
   });
 
-  return res.redirect("back");
+  return reponse.redirect("back");
 }
 
-export async function deleteComment(req, res) {
-  const prisma = req.prisma;
-  const userId = req.user.id;
+//////////
+// Supprime un commentaire existant
+// Autorise: auteur du commentaire OU auteur de la publication (modération)
+// Valide l'ID du commentaire
+// Retourne: redirect back
+//////////
+export async function supprimerCommentaire(requete, reponse) {
+  const idUtilisateur = requete.user.id;
+  const idCommentaire = Number(requete.params.commentId);
 
-  const commentId = Number(req.params.commentId);
-
-  const comment = await prisma.comment.findUnique({
-    where: { id: commentId },
+  const commentaire = await requete.prisma.comment.findUnique({
+    where: { id: idCommentaire },
     select: {
       id: true,
       userId: true,
@@ -35,15 +45,20 @@ export async function deleteComment(req, res) {
     },
   });
 
-  if (!comment) return res.status(404).send("Comment not found");
+  if (!commentaire) return reponse.status(404).send("Comment not found");
 
-  // autoriser: auteur du commentaire OU auteur du post (modération)
-  const isOwner = comment.userId === userId;
-  const isPostOwner = comment.post.authorId === userId;
+  const estProprietaire = commentaire.userId === idUtilisateur;
+  const estProprietairePublication = commentaire.post.authorId === idUtilisateur;
 
-  if (!isOwner && !isPostOwner) return res.status(403).send("Forbidden");
+  if (!estProprietaire && !estProprietairePublication) return reponse.status(403).send("Forbidden");
 
-  await prisma.comment.delete({ where: { id: commentId } });
+  await requete.prisma.comment.delete({ where: { id: idCommentaire } });
 
-  return res.redirect("back");
+  return reponse.redirect("back");
 }
+
+
+
+
+
+

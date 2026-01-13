@@ -1,15 +1,15 @@
 <%- include("../partials/header", { pageTitle: "Notifications", unreadCount, unreadMessages, user }) %>
 
-<div class="container my-4">
+<div class="container-fluid my-4" style="max-width: 1200px;">
   <div class="row">
     <div class="col-12">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>
+      <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <h2 class="mb-0">
           <i class="bi bi-bell"></i> Notifications
         </h2>
         <form method="POST" action="/notifications/read-all">
           <button type="submit" class="btn btn-outline-primary btn-sm">
-            <i class="bi bi-check-all"></i> Tout marquer comme lu
+            <i class="bi bi-check-all"></i> Marquer tout comme lu
           </button>
         </form>
       </div>
@@ -32,8 +32,8 @@
         <% } else { %>
           <div class="row g-3">
             <% groupInvites.forEach(inv => { %>
-              <div class="col-12">
-                <div class="card">
+              <div class="col-12 col-lg-8 mx-auto">
+                <div class="card shadow-sm">
                   <div class="card-body">
                     <p class="mb-2">
                       <strong><%= inv.fromUser.displayName %></strong>
@@ -44,7 +44,7 @@
                       <i class="bi bi-clock"></i> <%= new Date(inv.createdAt).toLocaleString() %>
                     </small>
 
-                    <div class="d-flex gap-2 mt-3">
+                    <div class="d-flex gap-2 mt-3 flex-wrap">
                       <form method="POST" action="/groups/invites/<%= inv.id %>/accept">
                         <button type="submit" class="btn btn-primary btn-sm">
                           <i class="bi bi-check-circle"></i> Accepter
@@ -71,6 +71,9 @@
       <div>
         <h3 class="h5 mb-3">
           <i class="bi bi-list"></i> Toutes les notifications
+          <% if (notifications && notifications.length > 0) { %>
+            <span class="badge bg-secondary"><%= notifications.length %></span>
+          <% } %>
         </h3>
 
         <% if (!notifications || notifications.length === 0) { %>
@@ -80,37 +83,37 @@
         <% } else { %>
           <div class="row g-3">
             <% (notifications || []).forEach(n => { %>
-              <div class="col-12">
-                <div class="card <%= n.readAt ? '' : 'border-primary' %>" style="background-color: <%= n.readAt ? '#fff' : '#f0f8ff' %>;">
+              <div class="col-12 col-lg-8 mx-auto">
+                <div class="card shadow-sm <%= n.readAt ? '' : 'border-primary' %>" style="background-color: <%= n.readAt ? '#fff' : '#f0f8ff' %>;">
                   <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
                       <div>
                         <span class="badge bg-<%= n.readAt ? 'secondary' : 'primary' %>">
                           <%= n.type %>
                         </span>
                         <% if (!n.readAt) { %>
-                          <span class="badge bg-danger ms-1">NEW</span>
+                          <span class="badge bg-danger ms-1">NOUVEAU</span>
                         <% } %>
                       </div>
-                      <small class="text-muted">
+                      <small class="text-muted text-end flex-shrink-0">
                         <i class="bi bi-clock"></i> <%= new Date(n.createdAt).toLocaleString() %>
                       </small>
                     </div>
 
                     <% if (n.fromUser) { %>
-                      <p class="mb-1">
+                      <p class="mb-2">
                         <strong><%= n.fromUser.displayName %></strong>
                       </p>
                     <% } %>
 
                     <% if (n.event) { %>
-                      <div class="small text-muted">
+                      <div class="small text-muted mb-2">
                         <i class="bi bi-calendar-event"></i> Event: <%= n.event.title %>
                       </div>
                     <% } %>
 
                     <% if (n.post) { %>
-                      <div class="small text-muted mt-1">
+                      <div class="small text-muted mb-2">
                         <i class="bi bi-chat-square-text"></i> Post: <%= n.post.content.slice(0, 80) %>
                       </div>
                     <% } %>
