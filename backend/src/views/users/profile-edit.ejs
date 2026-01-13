@@ -92,6 +92,50 @@
 
             <hr class="my-4">
 
+            <!-- Privacy Settings -->
+            <div class="mb-4">
+              <h5 class="mb-3">
+                <i class="bi bi-shield-lock"></i> Paramètres de confidentialité
+              </h5>
+
+              <!-- Profile Visibility -->
+              <div class="mb-3">
+                <label for="profileVisibility" class="form-label">
+                  Qui peut voir mon profil ?
+                </label>
+                <select class="form-select" id="profileVisibility" name="profileVisibility">
+                  <option value="PUBLIC" <%= profile.privacy?.profileVisibility === 'PUBLIC' ? 'selected' : '' %>>
+                    <i class="bi bi-globe"></i> Public - Tout le monde peut voir mon profil
+                  </option>
+                  <option value="FOLLOWERS" <%= profile.privacy?.profileVisibility === 'FOLLOWERS' ? 'selected' : '' %>>
+                    <i class="bi bi-people"></i> Abonnés - Seulement mes abonnés
+                  </option>
+                  <option value="PRIVATE" <%= profile.privacy?.profileVisibility === 'PRIVATE' ? 'selected' : '' %>>
+                    <i class="bi bi-lock"></i> Privé - Seulement moi
+                  </option>
+                </select>
+                <div class="form-text">Contrôlez qui peut accéder à votre profil et voir vos informations</div>
+              </div>
+
+              <!-- Receive Messages -->
+              <div class="form-check form-switch mb-3">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  id="canReceiveMessages"
+                  name="canReceiveMessages"
+                  value="true"
+                  <%= profile.privacy?.canReceiveMessages ? 'checked' : '' %>
+                />
+                <label class="form-check-label" for="canReceiveMessages">
+                  Autoriser les messages directs
+                </label>
+                <div class="form-text">Permettre aux autres utilisateurs de vous envoyer des messages</div>
+              </div>
+            </div>
+
+            <hr class="my-4">
+
             <!-- Avatar -->
             <div class="mb-3">
               <label class="form-label fw-bold">Avatar actuel</label>

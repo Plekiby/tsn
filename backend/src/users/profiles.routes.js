@@ -50,6 +50,20 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
   }
 
   try {
+    // Vérifier si l'utilisateur actuel est bloqué
+    const isBlocked = await prisma.userBlock.findUnique({
+      where: {
+        blockerId_blockedId: {
+          blockerId: userId,
+          blockedId: req.user.id
+        }
+      }
+    });
+
+    if (isBlocked && userId !== req.user.id) {
+      return res.status(403).render("errors/404", { message: "Vous n'avez pas accès à ce profil" });
+    }
+
     const profile = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -95,12 +109,45 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
               select: { userId: true }
             }
           }
+        },
+        privacy: {
+          select: {
+            profileVisibility: true,
+            canReceiveMessages: true
+          }
         }
       }
     });
 
     if (!profile) {
       return res.status(404).render("errors/404");
+    }
+
+    // Vérifier les permissions d'accès au profil
+    const isOwnProfile = req.user.id === userId;
+    const privacy = profile.privacy?.profileVisibility || "PUBLIC";
+    let canViewPosts = true;
+    let accessRestriction = null;
+
+    if (!isOwnProfile && privacy === "PRIVATE") {
+      canViewPosts = false;
+      accessRestriction = "private";
+    }
+
+    if (!isOwnProfile && privacy === "FOLLOWERS") {
+      const isFollowingProfile = await prisma.follow.findUnique({
+        where: {
+          followerId_followedId: {
+            followerId: req.user.id,
+            followedId: userId
+          }
+        }
+      });
+
+      if (!isFollowingProfile) {
+        canViewPosts = false;
+        accessRestriction = "followers";
+      }
     }
 
     // Vérifier si l'utilisateur actuel suit ce profil
@@ -113,8 +160,25 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
       }
     });
 
-    // Vérifier si c'est son propre profil
-    const isOwnProfile = req.user.id === userId;
+    // Vérifier si utilisateur est bloqué par l'utilisateur actuel
+    const userIsBlocked = await prisma.userBlock.findUnique({
+      where: {
+        blockerId_blockedId: {
+          blockerId: req.user.id,
+          blockedId: userId
+        }
+      }
+    });
+
+    // Vérifier si utilisateur est mute par l'utilisateur actuel
+    const userIsMuted = await prisma.userMute.findUnique({
+      where: {
+        muterId_mutedId: {
+          muterId: req.user.id,
+          mutedId: userId
+        }
+      }
+    });
 
     res.render("users/profile", {
       user: req.user,
@@ -122,7 +186,13 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
       isFollowing: !!isFollowing,
       isOwnProfile,
       interests: profile.userInterests.map(ui => ui.interest.name),
-      posts: profile.posts
+      posts: canViewPosts ? profile.posts : [],
+      isBlocked: !!userIsBlocked,
+      isMuted: !!userIsMuted,
+      canViewPosts,
+      accessRestriction,
+      profileVisibility: privacy,
+      canReceiveMessages: profile.privacy?.canReceiveMessages ?? true
     });
   } catch (error) {
     console.error("Error loading profile:", error);
@@ -153,7 +223,13 @@ profilesRouter.get("/:id/edit", requireAuth, async (req, res) => {
         bio: true,
         location: true,
         website: true,
-        dateOfBirth: true
+        dateOfBirth: true,
+        privacy: {
+          select: {
+            profileVisibility: true,
+            canReceiveMessages: true
+          }
+        }
       }
     });
 
@@ -187,7 +263,7 @@ profilesRouter.post(
     }
 
     try {
-      const { displayName, bio, location, website, dateOfBirth } = req.body;
+      const { displayName, bio, location, website, dateOfBirth, profileVisibility, canReceiveMessages } = req.body;
 
       const updateData = {
         displayName: displayName?.trim() || undefined,
@@ -211,10 +287,27 @@ profilesRouter.post(
         updateData.banner = "/public/uploads/" + req.files.banner[0].filename;
       }
 
+      // Mettre à jour le profil
       await prisma.user.update({
         where: { id: userId },
         data: updateData
       });
+
+      // Mettre à jour les paramètres de confidentialité
+      if (profileVisibility || canReceiveMessages !== undefined) {
+        await prisma.userPrivacy.upsert({
+          where: { userId },
+          update: {
+            profileVisibility: profileVisibility || undefined,
+            canReceiveMessages: canReceiveMessages === 'true' || canReceiveMessages === true
+          },
+          create: {
+            userId,
+            profileVisibility: profileVisibility || 'PUBLIC',
+            canReceiveMessages: canReceiveMessages === 'true' || canReceiveMessages === true
+          }
+        });
+      }
 
       res.redirect(`/profiles/${userId}`);
     } catch (error) {

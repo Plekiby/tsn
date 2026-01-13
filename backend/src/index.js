@@ -18,6 +18,7 @@ import { eventsRouter } from "./events/events.routes.js";
 import { groupInvitesRouter } from "./groupInvites/groupInvites.routes.js";
 import { groupInviteLinksRouter } from "./groupInvites/groupInviteLinks.routes.js";
 import { messagesRouter } from "./messages/messages.routes.js";
+import { privacyRouter } from "./privacy/privacy.routes.js";
 import { attachUnreadCount } from "./notifications/unread.middleware.js";
 import { attachUnreadMessages } from "./messages/unreadMessages.middleware.js";
 
@@ -49,6 +50,7 @@ app.use("/notifications", notificationsRouter);
 app.use("/messages", messagesRouter);
 app.use("/groups", groupsRouter);
 app.use("/events", eventsRouter);
+app.use("/privacy", privacyRouter);
 app.use(eventsRouter);
 app.use(realtimeRouter);
 app.use(commentsRoutes);

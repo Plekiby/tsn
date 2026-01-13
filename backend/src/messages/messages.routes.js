@@ -80,8 +80,23 @@ messagesRouter.get("/", requireAuth, async (req, res) => {
  */
 messagesRouter.post("/start/:userId", requireAuth, async (req, res) => {
   const otherUserId = Number(req.params.userId);
+  const isAjax = req.headers['x-requested-with'] === 'XMLHttpRequest';
+  
   if (!Number.isFinite(otherUserId) || otherUserId === req.user.id) {
-    return res.redirect("/messages");
+    return isAjax ? res.json({ error: "Invalid user ID" }) : res.redirect("/messages");
+  }
+
+  // Vérifier si l'utilisateur peut recevoir des messages
+  const otherUserPrivacy = await prisma.userPrivacy.findUnique({
+    where: { userId: otherUserId },
+    select: { canReceiveMessages: true }
+  });
+
+  if (otherUserPrivacy && !otherUserPrivacy.canReceiveMessages) {
+    return res.json({
+      error: "Cet utilisateur n'accepte pas les messages directs",
+      blocked: true
+    });
   }
 
   const ids = [req.user.id, otherUserId].sort((a, b) => a - b);
@@ -110,7 +125,11 @@ messagesRouter.post("/start/:userId", requireAuth, async (req, res) => {
     });
   }
 
-  res.redirect(`/messages/${conv.id}`);
+  if (isAjax) {
+    res.json({ conversationId: conv.id });
+  } else {
+    res.redirect(`/messages/${conv.id}`);
+  }
 });
 
 /**
