@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+  <body>
+    <%- include("../partials/topnav", { unreadCount }) %>
+
+    <h2>Friends</h2>
+
+    <hr />
+
+    <h3>Demandes reçues</h3>
+    <% if (!incoming || incoming.length === 0) { %>
+      <p>Aucune demande.</p>
+    <% } %>
+
+    <% (incoming || []).forEach(r => { %>
+      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
+        <strong><%= r.fromUser.displayName %></strong>
+
+        <form method="POST" action="/friends/accept/<%= r.id %>" style="display:inline;">
+          <button type="submit">Accepter</button>
+        </form>
+
+        <form method="POST" action="/friends/reject/<%= r.id %>" style="display:inline;">
+          <button type="submit">Refuser</button>
+        </form>
+      </div>
+    <% }) %>
+
+    <hr />
+
+    <h3>Mes amis</h3>
+    <% if (!friends || friends.length === 0) { %>
+      <p>Aucun ami.</p>
+    <% } %>
+
+    <% (friends || []).forEach(f => { %>
+      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
+        <strong><%= f.displayName %></strong>
+      </div>
+    <% }) %>
+  </body>
+</html>

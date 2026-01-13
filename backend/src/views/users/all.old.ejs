@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <body>
+    <%- include("../partials/topnav", { unreadCount }) %>
+    <h2>All users</h2>
+
+    <hr />
+
+    <% (users || []).forEach(u => { %>
+      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
+        <strong><a href="/profiles/<%= u.id %>"><%= u.displayName %></a></strong> — <%= u.email %>
+
+        <div style="margin-top:8px;">
+          <form method="POST" action="/users/<%= u.id %>/follow" style="display:inline;">
+            <button type="submit">Follow / Unfollow</button>
+          </form>
+
+          <form method="POST" action="/friends/request/<%= u.id %>" style="display:inline;">
+            <button type="submit">Add friend</button>
+          </form>
+        </div>
+      </div>
+    <% }) %>
+  </body>
+</html>

@@ -1,0 +1,165 @@
+<%- include("../partials/header", { pageTitle: profile.displayName + " - TSN", unreadCount, unreadMessages, user }) %>
+
+<!-- Bannière -->
+<% if (profile.banner) { %>
+  <img src="<%= profile.banner %>" alt="Banner" class="profile-banner w-100" style="height: 250px; object-fit: cover;">
+<% } else { %>
+  <div class="profile-banner w-100" style="height: 250px;"></div>
+<% } %>
+
+<div class="container">
+  <div class="row">
+    <div class="col-lg-8 offset-lg-2">
+      <!-- Header du profil -->
+      <div class="position-relative" style="margin-top: -80px;">
+        <div class="text-center mb-3">
+          <% if (profile.avatar) { %>
+            <img src="<%= profile.avatar %>" alt="Avatar" class="profile-avatar">
+          <% } else { %>
+            <div class="profile-avatar bg-primary text-white d-inline-flex align-items-center justify-content-center" style="font-size: 48px;">
+              <%= profile.displayName.charAt(0).toUpperCase() %>
+            </div>
+          <% } %>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <div class="text-center mb-3">
+              <h2 class="mb-1"><%= profile.displayName %></h2>
+              <p class="text-muted">
+                <i class="bi bi-calendar-check"></i> Membre depuis <%= new Date(profile.createdAt).toLocaleDateString() %>
+              </p>
+            </div>
+
+            <!-- Actions -->
+            <div class="d-flex justify-content-center gap-2 mb-4 flex-wrap">
+              <% if (isOwnProfile) { %>
+                <a href="/profiles/<%= profile.id %>/edit" class="btn btn-primary">
+                  <i class="bi bi-pencil"></i> Éditer mon profil
+                </a>
+              <% } else { %>
+                <form method="POST" action="/users/<%= profile.id %>/follow" class="d-inline">
+                  <button type="submit" class="btn <%= isFollowing ? 'btn-secondary' : 'btn-outline-primary' %>">
+                    <i class="bi bi-<%= isFollowing ? 'person-dash' : 'person-plus' %>"></i>
+                    <%= isFollowing ? 'Ne plus suivre' : 'Suivre' %>
+                  </button>
+                </form>
+                <form method="POST" action="/messages/start/<%= profile.id %>" class="d-inline">
+                  <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-chat-dots"></i> Message
+                  </button>
+                </form>
+              <% } %>
+            </div>
+
+            <!-- Stats -->
+            <div class="row text-center mb-4">
+              <div class="col-4">
+                <h4 class="fw-bold text-primary"><%= profile._count.posts %></h4>
+                <small class="text-muted">Posts</small>
+              </div>
+              <div class="col-4">
+                <a href="/friends?tab=followers&userId=<%= profile.id %>" style="text-decoration: none; color: inherit;">
+                  <h4 class="fw-bold text-primary"><%= profile._count.followers %></h4>
+                  <small class="text-muted">Followers</small>
+                </a>
+              </div>
+              <div class="col-4">
+                <a href="/friends?tab=following&userId=<%= profile.id %>" style="text-decoration: none; color: inherit;">
+                  <h4 class="fw-bold text-primary"><%= profile._count.following %></h4>
+                  <small class="text-muted">Following</small>
+                </a>
+              </div>
+            </div>
+
+            <!-- Bio -->
+            <% if (profile.bio) { %>
+              <div class="alert alert-light mb-4">
+                <p class="mb-0"><%= profile.bio %></p>
+              </div>
+            <% } %>
+
+            <!-- Détails -->
+            <div class="mb-4">
+              <% if (profile.location) { %>
+                <div class="mb-2">
+                  <i class="bi bi-geo-alt text-primary"></i>
+                  <strong>Localisation:</strong> <%= profile.location %>
+                </div>
+              <% } %>
+              <% if (profile.website) { %>
+                <div class="mb-2">
+                  <i class="bi bi-link-45deg text-primary"></i>
+                  <strong>Site web:</strong>
+                  <a href="<%= profile.website %>" target="_blank" rel="noopener" class="link-primary">
+                    <%= profile.website %>
+                  </a>
+                </div>
+              <% } %>
+              <% if (profile.dateOfBirth) { %>
+                <div class="mb-2">
+                  <i class="bi bi-cake text-primary"></i>
+                  <strong>Anniversaire:</strong> <%= new Date(profile.dateOfBirth).toLocaleDateString() %>
+                </div>
+              <% } %>
+            </div>
+
+            <!-- Intérêts -->
+            <% if (interests && interests.length > 0) { %>
+              <div>
+                <h6 class="fw-bold mb-3">
+                  <i class="bi bi-star text-primary"></i> Intérêts
+                </h6>
+                <div class="d-flex flex-wrap gap-2">
+                  <% interests.forEach(interest => { %>
+                    <span class="badge interest-tag px-3 py-2">
+                      <%= interest %>
+                    </span>
+                  <% }) %>
+                </div>
+              </div>
+            <% } %>
+          </div>
+        </div>
+
+        <!-- Section Publications -->
+        <div class="card mt-4">
+          <div class="card-body">
+            <h5 class="card-title">
+              <i class="bi bi-journal-text text-primary"></i> Publications récentes
+            </h5>
+            <% if (posts && posts.length > 0) { %>
+              <div class="posts-list">
+                <% posts.forEach(post => { %>
+                  <div class="card mb-3">
+                    <div class="card-body">
+                      <p class="card-text"><%= post.content %></p>
+                      <div class="d-flex justify-content-between align-items-center text-muted small">
+                        <span><%= new Date(post.createdAt).toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) %></span>
+                        <div class="d-flex gap-3">
+                          <span>
+                            <i class="bi bi-heart"></i> <%= post._count.likes %>
+                          </span>
+                          <span>
+                            <i class="bi bi-chat-dots"></i> <%= post._count.comments %>
+                          </span>
+                        </div>
+                      </div>
+                      <div class="mt-2">
+                        <a href="/feed" class="btn btn-sm btn-outline-primary">Voir plus</a>
+                      </div>
+                    </div>
+                  </div>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <p class="text-muted">Aucune publication pour le moment.</p>
+            <% } %>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include("../partials/footer") %>

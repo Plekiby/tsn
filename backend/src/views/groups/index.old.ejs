@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+  <body>    
+    <%- include("../partials/topnav", { unreadCount }) %>
+
+    <h2>Groups</h2>
+
+    <hr />
+
+    <h3>Créer un groupe</h3>
+    <form method="POST" action="/groups">
+      <input name="name" placeholder="Nom du groupe" style="width:320px;" />
+      <br /><br />
+
+      <textarea name="description" rows="3" placeholder="Description (optionnel)" style="width:320px;"></textarea>
+      <br /><br />
+
+      <label>Privacy :</label>
+      <select name="privacy">
+        <option value="PUBLIC">PUBLIC</option>
+        <option value="PRIVATE">PRIVATE</option>
+        <option value="SECRET">SECRET</option>
+      </select>
+
+      <br /><br />
+      <button type="submit">Créer</button>
+    </form>
+
+    <hr />
+
+    <h3>Mes groupes</h3>
+    <% if (!myMemberships || myMemberships.length === 0) { %>
+      <p>Tu n’es membre d’aucun groupe.</p>
+    <% } else { %>
+      <ul>
+        <% myMemberships.forEach(m => { %>
+          <li>
+            <a href="/groups/<%= m.group.id %>"><%= m.group.name %></a>
+            <span style="font-size:12px; opacity:0.7;">(role: <%= m.role %>)</span>
+          </li>
+        <% }) %>
+      </ul>
+    <% } %>
+
+    <hr />
+
+    <h3>Groupes visibles</h3>
+    <% if (!groups || groups.length === 0) { %>
+      <p>Aucun groupe.</p>
+    <% } else { %>
+      <% groups.forEach(g => { %>
+        <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
+          <div>
+            <a href="/groups/<%= g.id %>"><strong><%= g.name %></strong></a>
+          </div>
+
+          <% if (g.description) { %>
+            <div style="margin-top:6px;"><%= g.description %></div>
+          <% } %>
+
+          <div style="font-size:12px; opacity:0.7; margin-top:6px;">
+            privacy: <%= g.privacy %> • owner: <%= g.owner.displayName %> • members: <%= g._count.members %>
+          </div>
+        </div>
+      <% }) %>
+    <% } %>
+  </body>
+</html>

@@ -1,0 +1,218 @@
+<nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="/feed">
+      <i class="bi bi-diagram-3"></i> TSN
+    </a>
+
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/posts/feed">
+            <i class="bi bi-house-door"></i> Feed
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/users/all">
+            <i class="bi bi-people"></i> Utilisateurs
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/users/recommendations">
+            <i class="bi bi-person-plus"></i> Recommandations
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/interests">
+            <i class="bi bi-star"></i> Intérêts
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/friends">
+            <i class="bi bi-person-hearts"></i> Amis
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/groups">
+            <i class="bi bi-collection"></i> Groupes
+          </a>
+        </li>
+      </ul>
+
+      <ul class="navbar-nav">
+        <li class="nav-item">
+          <a class="nav-link position-relative" href="/messages" id="messagesLink">
+            <i class="bi bi-chat-dots"></i> Messages
+            <% if ((unreadMessages || 0) > 0) { %>
+              <span id="messagesBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill messages-badge">
+                <%= unreadMessages %>
+              </span>
+            <% } else { %>
+              <span id="messagesBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill messages-badge" style="visibility:hidden;">
+                0
+              </span>
+            <% } %>
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a class="nav-link position-relative" href="/notifications" id="notifLink">
+            <i class="bi bi-bell"></i> Notifications
+            <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+              <%= unreadCount || 0 %>
+            </span>
+          </a>
+        </li>
+
+        <% if (user && user.id) { %>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+              <i class="bi bi-person-circle"></i> Mon compte
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="/profiles/<%= user.id %>">
+                <i class="bi bi-person"></i> Mon profil
+              </a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <form method="POST" action="/auth/logout" class="d-inline">
+                  <button type="submit" class="dropdown-item text-danger">
+                    <i class="bi bi-box-arrow-right"></i> Déconnexion
+                  </button>
+                </form>
+              </li>
+            </ul>
+          </li>
+        <% } %>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<script>
+(function () {
+  if (window.__tsnSseStarted) return;
+  window.__tsnSseStarted = true;
+
+  const notifBadge = document.getElementById("notifBadge");
+  const messagesBadge = document.getElementById("messagesBadge");
+
+  function setBadge(n) {
+    const val = Number(n) || 0;
+    if (notifBadge) {
+      notifBadge.textContent = val;
+      notifBadge.style.visibility = val > 0 ? "visible" : "hidden";
+    }
+  }
+
+  function setMessagesBadge(n) {
+    const val = Number(n) || 0;
+    if (messagesBadge) {
+      messagesBadge.textContent = val;
+      messagesBadge.style.visibility = val > 0 ? "visible" : "hidden";
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function notifLabel(n) {
+    const from = n.fromUser?.displayName ? `De ${n.fromUser.displayName}` : "";
+    switch (n.type) {
+      case "LIKE": return `❤️ Nouveau like. ${from}`;
+      case "COMMENT": return `💬 Nouveau commentaire. ${from}`;
+      case "FRIEND_REQUEST": return `👥 Nouvelle demande d'ami. ${from}`;
+      case "FRIEND_ACCEPTED": return `✅ Demande d'ami acceptée. ${from}`;
+      case "FOLLOW": return `➕ Nouveau follower. ${from}`;
+      case "GROUP_INVITE": return `📨 Invitation de groupe. ${from}`;
+      case "GROUP_JOIN": return `🚪 Quelqu'un a rejoint ton groupe. ${from}`;
+      case "EVENT_CREATED":
+        return `📅 Nouvel event créé${n.event?.title ? ` : ${n.event.title}` : ""}. ${from}`;
+      case "EVENT_RSVP":
+        return `🗓️ RSVP sur ton event. ${from}`;
+      default:
+        return `🔔 Nouvelle notification. ${from}`;
+    }
+  }
+
+  function toast(message, onClick) {
+    const container = document.getElementById("toastContainer");
+    if (!container) return;
+
+    const toastEl = document.createElement("div");
+    toastEl.className = "toast";
+    toastEl.setAttribute("role", "alert");
+    toastEl.innerHTML = `
+      <div class="toast-header bg-dark text-white">
+        <strong class="me-auto">Notification</strong>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+      </div>
+      <div class="toast-body" style="cursor:pointer;">
+        ${escapeHtml(message)}
+      </div>
+    `;
+
+    toastEl.querySelector(".toast-body").addEventListener("click", () => {
+      try { onClick?.(); } catch (_) {}
+    });
+
+    container.appendChild(toastEl);
+    const bsToast = new bootstrap.Toast(toastEl, { autohide: true, delay: 4500 });
+    bsToast.show();
+
+    toastEl.addEventListener("hidden.bs.toast", () => toastEl.remove());
+  }
+
+  if (notifBadge) setBadge(notifBadge.textContent);
+  if (messagesBadge) setMessagesBadge(messagesBadge.textContent);
+
+  const es = new EventSource("/events");
+
+  es.addEventListener("ping", () => {});
+
+  es.onmessage = (e) => {
+    let data;
+    try { data = JSON.parse(e.data); } catch (_) { return; }
+    if (!data) return;
+
+    if (data.type === "new_message") {
+      const current = Number(messagesBadge?.textContent) || 0;
+      setMessagesBadge(current + 1);
+
+      const sender = data.message?.sender?.displayName || "Quelqu'un";
+      const preview = data.message?.content?.substring(0, 50) || "";
+      const msg = `💬 ${sender}: ${preview}${preview.length >= 50 ? "..." : ""}`;
+
+      toast(msg, () => {
+        window.location.href = `/messages/${data.conversationId}`;
+      });
+      return;
+    }
+
+    if (typeof data.unreadCount === "number") {
+      setBadge(data.unreadCount);
+    } else {
+      const current = Number(notifBadge?.textContent) || 0;
+      setBadge(current + 1);
+    }
+
+    const msg = notifLabel(data);
+    const goTo = () => {
+      if (data.event?.groupId) window.location.href = `/groups/${data.event.groupId}`;
+      else window.location.href = "/notifications";
+    };
+
+    toast(msg, goTo);
+  };
+
+})();
+</script>

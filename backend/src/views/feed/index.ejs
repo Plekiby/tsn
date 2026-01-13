@@ -1,59 +1,155 @@
-<!doctype html>
-<html>
-  <body>
-    <h2>Feed</h2>
+<%- include("../partials/header", { pageTitle: "Feed - TSN", unreadCount, unreadMessages, user }) %>
 
-    <div style="margin-bottom:10px;">
-      <a href="/users/all">Users</a> |
-      <a href="/users/recommendations">Reco</a> |
-      <a href="/interests">Intérêts</a> |
-      <a href="/friends">Friends</a>
+<div class="container">
+  <div class="row">
+    <div class="col-lg-3 d-none d-lg-block">
+      <div class="card sticky-top" style="top: 80px;">
+        <div class="card-body">
+          <h6 class="text-muted"><i class="bi bi-compass"></i> Navigation</h6>
+          <div class="d-grid gap-2 mt-3">
+            <a href="/users/recommendations" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-person-plus"></i> Recommandations
+            </a>
+            <a href="/interests" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-star"></i> Intérêts
+            </a>
+            <a href="/groups" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-collection"></i> Groupes
+            </a>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <form method="POST" action="/auth/logout">
-      <button type="submit">Logout</button>
-    </form>
-
-    <hr />
-
-    <form method="POST" action="/posts">
-      <textarea name="content" rows="3" placeholder="Quoi de neuf ?"></textarea>
-
-      <div style="margin:8px 0;">
-        <label>Visibilité :</label>
-        <select name="visibility">
-          <option value="PUBLIC">PUBLIC</option>
-          <option value="FOLLOWERS">FOLLOWERS</option>
-          <option value="FRIENDS">FRIENDS</option>
-          <option value="PRIVATE">PRIVATE</option>
-        </select>
-      </div>
-
-      <button type="submit">Publier</button>
-    </form>
-
-    <hr />
-
-    <% if (!posts || posts.length === 0) { %>
-      <p>Aucun post.</p>
-    <% } %>
-
-    <% (posts || []).forEach(p => { %>
-      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
-        <strong><%= p.author.displayName %></strong>
-
-        <div style="font-size:12px; opacity:0.7;">
-          visibility: <%= p.visibility %>
+    <div class="col-lg-6">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title"><i class="bi bi-pencil-square text-primary"></i> Nouveau post</h5>
+          <form method="POST" action="/posts">
+            <textarea name="content" class="form-control mb-3" rows="3" placeholder="Quoi de neuf ?" required></textarea>
+            <div class="row">
+              <div class="col-md-6 mb-2">
+                <select name="visibility" class="form-select form-select-sm">
+                  <option value="PUBLIC">🌍 Public</option>
+                  <option value="FOLLOWERS">👥 Followers</option>
+                  <option value="FRIENDS">👫 Amis</option>
+                  <option value="PRIVATE">🔒 Privé</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <button type="submit" class="btn btn-primary w-100">
+                  <i class="bi bi-send"></i> Publier
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
-
-        <div style="margin-top:8px;"><%= p.content %></div>
-
-        <div style="margin-top:8px;">likes: <%= p.likes.length %></div>
-
-        <form method="POST" action="/posts/<%= p.id %>/like">
-          <button type="submit">Like / Unlike</button>
-        </form>
       </div>
-    <% }) %>
-  </body>
-</html>
+
+      <% if (!posts || posts.length === 0) { %>
+        <div class="alert alert-info"><i class="bi bi-info-circle"></i> Aucun post.</div>
+      <% } %>
+
+      <% (posts || []).forEach(p => { %>
+        <div class="card mb-3">
+          <div class="card-body">
+            <div class="d-flex align-items-center mb-3">
+              <% if (p.author.avatar) { %>
+                <img src="<%= p.author.avatar %>" class="profile-avatar-sm me-2">
+              <% } else { %>
+                <div class="profile-avatar-sm bg-primary text-white d-flex align-items-center justify-content-center fw-bold me-2">
+                  <%= p.author.displayName.charAt(0).toUpperCase() %>
+                </div>
+              <% } %>
+              <div>
+                <h6 class="mb-0">
+                  <a href="/profiles/<%= p.authorId %>" class="link-primary">
+                    <%= p.author.displayName %>
+                  </a>
+                </h6>
+                <small class="text-muted">
+                  <%= p.visibility %>
+                  <% if (p.group) { %>
+                    · <a href="/groups/<%= p.group.id %>"><%= p.group.name %></a>
+                  <% } %>
+                </small>
+              </div>
+            </div>
+
+            <% if (debug && p.debugScore) { %>
+              <div class="alert alert-secondary small">
+                Score: <%= p.debugScore.score.toFixed(2) %>
+              </div>
+            <% } %>
+
+            <p><%= p.content %></p>
+
+            <div class="d-flex gap-3 mb-3">
+              <form method="POST" action="/posts/<%= p.id %>/like" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                  <i class="bi bi-heart"></i> <%= p.likes.length %>
+                </button>
+              </form>
+              <span class="text-muted small">
+                <i class="bi bi-chat-dots"></i> <%= p._count?.comments ?? 0 %>
+              </span>
+            </div>
+
+            <form method="POST" action="/posts/<%= p.id %>/comments" class="mb-3">
+              <div class="input-group input-group-sm">
+                <input type="text" name="content" class="form-control" placeholder="Commenter..." maxlength="1000" required>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i></button>
+              </div>
+            </form>
+
+            <% if (p.comments && p.comments.length > 0) { %>
+              <% p.comments.forEach(c => { %>
+                <div class="d-flex gap-2 mb-2">
+                  <% if (c.user.avatar) { %>
+                    <img src="<%= c.user.avatar %>" class="profile-avatar-xs">
+                  <% } else { %>
+                    <div class="profile-avatar-xs bg-secondary text-white d-flex align-items-center justify-content-center">
+                      <%= c.user.displayName.charAt(0) %>
+                    </div>
+                  <% } %>
+                  <div class="flex-grow-1">
+                    <div class="bg-light p-2 rounded">
+                      <strong><a href="/profiles/<%= c.userId %>"><%= c.user.displayName %></a></strong>
+                      <small class="text-muted">· <%= new Date(c.createdAt).toLocaleString() %></small>
+                      <p class="mb-0"><%= c.content %></p>
+                    </div>
+                    <% if (user && (user.id === c.userId || user.id === p.authorId)) { %>
+                      <form method="POST" action="/comments/<%= c.id %>/delete" class="d-inline">
+                        <button type="submit" class="btn btn-link btn-sm text-danger p-0">Supprimer</button>
+                      </form>
+                    <% } %>
+                  </div>
+                </div>
+              <% }) %>
+            <% } %>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+
+    <div class="col-lg-3 d-none d-lg-block">
+      <div class="card">
+        <div class="card-body">
+          <h6 class="text-muted"><i class="bi bi-gear"></i> Options</h6>
+          <div class="d-flex flex-column gap-2 mt-3">
+            <a href="/posts/feed" class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-arrow-clockwise"></i> Recharger
+            </a>
+            <% if (debug) { %>
+              <a href="/posts/feed" class="btn btn-sm btn-secondary">Debug: ON</a>
+            <% } else { %>
+              <a href="/posts/feed?debug=1" class="btn btn-sm btn-outline-secondary">Debug</a>
+            <% } %>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include("../partials/footer") %>

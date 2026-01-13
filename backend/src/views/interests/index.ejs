@@ -1,28 +1,72 @@
-<!doctype html>
-<html>
-  <body>
-    <h2>Centres d’intérêt</h2>
-    <a href="/posts/feed">← Feed</a> | <a href="/users/recommendations">Reco FOAF</a>
+<%- include("../partials/header", { pageTitle: "Centres d'intérêt", unreadCount, unreadMessages, user }) %>
 
-    <hr />
+<div class="container my-4">
+  <div class="row">
+    <div class="col-12">
+      <h2 class="mb-4">
+        <i class="bi bi-tag"></i> Centres d'intérêt
+      </h2>
 
-    <h3>Créer un intérêt</h3>
-    <form method="POST" action="/interests">
-      <input name="name" placeholder="ex: football, IA, musique..." />
-      <button type="submit">Ajouter</button>
-    </form>
+      <hr class="mb-4">
 
-    <hr />
-
-    <h3>Choisir mes intérêts (toggle)</h3>
-    <% interests.forEach(i => { %>
-      <div style="margin:8px 0; padding:8px; border:1px solid #ddd;">
-        <strong><%= i.name %></strong>
-        <% const selected = mySet.has(i.id); %>
-        <form method="POST" action="/interests/<%= i.id %>/toggle" style="display:inline;">
-          <button type="submit"><%= selected ? "Retirer" : "Ajouter" %></button>
-        </form>
+      <!-- Créer un intérêt -->
+      <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Créer un intérêt</h5>
+        </div>
+        <div class="card-body">
+          <form method="POST" action="/interests">
+            <div class="input-group">
+              <input
+                type="text"
+                class="form-control"
+                name="name"
+                placeholder="ex: football, IA, musique..."
+                required
+              />
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> Ajouter
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    <% }) %>
-  </body>
-</html>
+
+      <hr class="mb-4">
+
+      <!-- Mes intérêts -->
+      <div>
+        <h3 class="h5 mb-3">
+          <i class="bi bi-star-fill"></i> Choisir mes intérêts
+        </h3>
+
+        <div class="row g-3">
+          <% interests.forEach(i => { %>
+            <div class="col-12 col-md-6 col-lg-4">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                      <% const selected = mySet.has(i.id); %>
+                      <span class="<%= selected ? 'badge interest-tag' : 'text-muted' %>">
+                        <i class="bi bi-tag-fill"></i> <%= i.name %>
+                      </span>
+                    </div>
+                    <form method="POST" action="/interests/<%= i.id %>/toggle">
+                      <button type="submit" class="btn btn-<%= selected ? 'outline-danger' : 'outline-primary' %> btn-sm">
+                        <i class="bi bi-<%= selected ? 'x-circle' : 'plus-circle' %>"></i>
+                        <%= selected ? "Retirer" : "Ajouter" %>
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include("../partials/footer") %>

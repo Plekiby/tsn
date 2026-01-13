@@ -1,45 +1,103 @@
-<!doctype html>
-<html>
-  <body>
-    <h2>Friends</h2>
+<%- include("../partials/header", { pageTitle: "Amis", unreadCount, unreadMessages, user }) %>
 
-    <div style="margin-bottom:10px;">
-      <a href="/posts/feed">← Feed</a> |
-      <a href="/users/all">Users</a>
+<div class="container my-4">
+  <div class="row">
+    <div class="col-12">
+      <% 
+        const isViewingOwnProfile = user.id === viewingUserId;
+      %>
+
+      <% if (!isViewingOwnProfile) { %>
+        <div class="alert alert-info mb-4">
+          <i class="bi bi-info-circle"></i> Vous consultez les followers et following d'un autre utilisateur
+        </div>
+      <% } %>
+
+      <h2 class="mb-4">
+        <i class="bi bi-people-fill"></i> 
+        <% if (isViewingOwnProfile) { %>
+          Mes relations
+        <% } else { %>
+          Relations de <strong><%= viewingUserName %></strong>
+        <% } %>
+      </h2>
+
+      <!-- Tabs -->
+      <ul class="nav nav-tabs mb-4" role="tablist">
+        <li class="nav-item" role="presentation">
+          <a class="nav-link <%= tab === 'followers' ? 'active' : '' %>" href="/friends?tab=followers&userId=<%= viewingUserId %>">
+            <i class="bi bi-person-check"></i> Followers
+          </a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a class="nav-link <%= tab === 'following' ? 'active' : '' %>" href="/friends?tab=following&userId=<%= viewingUserId %>">
+            <i class="bi bi-person-dash"></i> Following
+          </a>
+        </li>
+      </ul>
+
+      <hr class="mb-4">
+
+      <!-- Liste principale -->
+      <% 
+        let itemsToDisplay = [];
+        let sectionTitle = '';
+        let emptyMessage = '';
+        
+        if (tab === 'followers') {
+          itemsToDisplay = followers;
+          sectionTitle = 'Followers';
+          emptyMessage = 'Aucun follower pour le moment.';
+        } else if (tab === 'following') {
+          itemsToDisplay = following;
+          sectionTitle = 'Following';
+          emptyMessage = 'Ne suit personne pour le moment.';
+        }
+      %>
+
+      <div>
+        <h3 class="h5 mb-3">
+          <i class="bi bi-people"></i> <%= sectionTitle %>
+          <% if (itemsToDisplay && itemsToDisplay.length > 0) { %>
+            <span class="badge bg-secondary"><%= itemsToDisplay.length %></span>
+          <% } %>
+        </h3>
+
+        <% if (!itemsToDisplay || itemsToDisplay.length === 0) { %>
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> <%= emptyMessage %>
+          </div>
+        <% } else { %>
+          <div class="row g-3">
+            <% itemsToDisplay.forEach(item => { %>
+              <div class="col-12 col-md-6 col-lg-4">
+                <div class="card">
+                  <div class="card-body">
+                    <div class="d-flex align-items-center">
+                      <% if (item.avatar) { %>
+                        <img src="<%= item.avatar %>" alt="Avatar" class="rounded-circle me-2" style="width: 50px; height: 50px; object-fit: cover;">
+                      <% } else { %>
+                        <div class="rounded-circle me-2 bg-primary text-white d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                          <%= item.displayName.charAt(0).toUpperCase() %>
+                        </div>
+                      <% } %>
+                      <div class="flex-grow-1">
+                        <h5 class="card-title mb-0">
+                          <a href="/profiles/<%= item.id %>" class="link-primary text-decoration-none">
+                            <%= item.displayName %>
+                          </a>
+                        </h5>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            <% }) %>
+          </div>
+        <% } %>
+      </div>
     </div>
+  </div>
+</div>
 
-    <hr />
-
-    <h3>Demandes reçues</h3>
-    <% if (!incoming || incoming.length === 0) { %>
-      <p>Aucune demande.</p>
-    <% } %>
-
-    <% (incoming || []).forEach(r => { %>
-      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
-        <strong><%= r.fromUser.displayName %></strong>
-
-        <form method="POST" action="/friends/accept/<%= r.id %>" style="display:inline;">
-          <button type="submit">Accepter</button>
-        </form>
-
-        <form method="POST" action="/friends/reject/<%= r.id %>" style="display:inline;">
-          <button type="submit">Refuser</button>
-        </form>
-      </div>
-    <% }) %>
-
-    <hr />
-
-    <h3>Mes amis</h3>
-    <% if (!friends || friends.length === 0) { %>
-      <p>Aucun ami.</p>
-    <% } %>
-
-    <% (friends || []).forEach(f => { %>
-      <div style="border:1px solid #ddd; padding:10px; margin:10px 0;">
-        <strong><%= f.displayName %></strong>
-      </div>
-    <% }) %>
-  </body>
-</html>
+<%- include("../partials/footer") %>

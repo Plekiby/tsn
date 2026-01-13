@@ -1,0 +1,143 @@
+<%- include("../partials/header", { pageTitle: "Conversation - " + (isGroup ? groupName : otherMembers[0]?.displayName || 'Utilisateur'), unreadCount, unreadMessages, user }) %>
+
+<div class="container my-4">
+  <div class="mb-3">
+    <a href="/messages" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-arrow-left"></i> Retour aux conversations
+    </a>
+  </div>
+
+  <div class="card shadow-sm">
+    <!-- Header -->
+    <div class="card-header bg-light border-bottom">
+      <% if (isGroup) { %>
+        <h5 class="mb-0"><%= groupName %></h5>
+        <small class="text-muted"><%= conversation.members.length %> membres</small>
+      <% } else { %>
+        <% const other = otherMembers[0]; %>
+        <h5 class="mb-0"><%= other?.displayName || 'Utilisateur' %></h5>
+        <small class="text-muted">
+          <a href="/profiles/<%= other?.id %>" class="link-primary">Voir le profil</a>
+        </small>
+      <% } %>
+    </div>
+
+    <!-- Messages -->
+    <div class="card-body p-3" style="height: 500px; overflow-y: auto; background-color: #fafafa;" id="chatMessages">
+      <% (conversation.messages || []).forEach(msg => { %>
+        <div class="d-flex mb-3 <%= msg.senderId === user.id ? 'flex-row-reverse' : '' %>">
+          <!-- Avatar -->
+          <div class="flex-shrink-0">
+            <% if (msg.sender.avatar) { %>
+              <img src="<%= msg.sender.avatar %>" class="profile-avatar-sm" alt="Avatar">
+            <% } else { %>
+              <div class="profile-avatar-sm d-flex align-items-center justify-content-center bg-secondary text-white fw-bold">
+                <%= msg.sender.displayName.charAt(0).toUpperCase() %>
+              </div>
+            <% } %>
+          </div>
+
+          <!-- Message content -->
+          <div class="<%= msg.senderId === user.id ? 'me-2' : 'ms-2' %>" style="max-width: 60%;">
+            <% if (msg.senderId !== user.id) { %>
+              <div class="small text-muted mb-1"><%= msg.sender.displayName %></div>
+            <% } %>
+            <div class="p-2 rounded <%= msg.senderId === user.id ? 'bg-primary text-white' : 'bg-white' %> shadow-sm">
+              <%= msg.content %>
+              <div class="small mt-1" style="opacity: 0.7; font-size: 0.75rem;">
+                <%= new Date(msg.createdAt).toLocaleTimeString() %>
+              </div>
+            </div>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+
+    <!-- Input -->
+    <div class="card-footer bg-white border-top">
+      <form method="POST" action="/messages/<%= conversation.id %>/send" id="chatForm">
+        <div class="input-group">
+          <input
+            type="text"
+            name="content"
+            class="form-control"
+            placeholder="Écrivez votre message..."
+            maxlength="5000"
+            required
+            autofocus
+            id="messageInput"
+          />
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-send"></i> Envoyer
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const chatMessages = document.getElementById("chatMessages");
+  const chatForm = document.getElementById("chatForm");
+  const messageInput = document.getElementById("messageInput");
+
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  const es = new EventSource("/events");
+
+  es.onmessage = (e) => {
+    let data;
+    try { data = JSON.parse(e.data); } catch (_) { return; }
+
+    if (data.type === "new_message" && data.conversationId === <%= conversation.id %>) {
+      const msg = data.message;
+      const isOwn = msg.senderId === <%= user.id %>;
+
+      const msgDiv = document.createElement("div");
+      msgDiv.className = "d-flex mb-3" + (isOwn ? " flex-row-reverse" : "");
+
+      const avatarDiv = msg.sender.avatar
+        ? `<img src="${msg.sender.avatar}" class="profile-avatar-sm" alt="Avatar">`
+        : `<div class="profile-avatar-sm d-flex align-items-center justify-content-center bg-secondary text-white fw-bold">${msg.sender.displayName.charAt(0).toUpperCase()}</div>`;
+
+      const senderDiv = !isOwn
+        ? `<div class="small text-muted mb-1">${msg.sender.displayName}</div>`
+        : "";
+
+      msgDiv.innerHTML = `
+        <div class="flex-shrink-0">
+          ${avatarDiv}
+        </div>
+        <div class="${isOwn ? 'me-2' : 'ms-2'}" style="max-width: 60%;">
+          ${senderDiv}
+          <div class="p-2 rounded ${isOwn ? 'bg-primary text-white' : 'bg-white'} shadow-sm">
+            ${escapeHtml(msg.content)}
+            <div class="small mt-1" style="opacity: 0.7; font-size: 0.75rem;">
+              ${new Date(msg.createdAt).toLocaleTimeString()}
+            </div>
+          </div>
+        </div>
+      `;
+
+      chatMessages.appendChild(msgDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+  };
+
+  function escapeHtml(str) {
+    return String(str || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  chatForm.addEventListener("submit", (e) => {
+    messageInput.value = messageInput.value.trim();
+  });
+})();
+</script>
+
+<%- include("../partials/footer") %>

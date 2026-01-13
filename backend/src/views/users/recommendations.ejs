@@ -1,55 +1,92 @@
-<!doctype html>
-<html>
-  <body>
-    <h2>Recommandations FOAF + intérêts</h2>
+<%- include("../partials/header", { pageTitle: "Recommandations", unreadCount, unreadMessages, user }) %>
 
-    <div style="margin-bottom:10px;">
-      <a href="/posts/feed">← Feed</a> |
-      <a href="/users/all">All users</a> |
-      <a href="/interests">Mes intérêts</a>
-    </div>
-
-    <form method="POST" action="/auth/logout" style="margin:10px 0;">
-      <button type="submit">Logout</button>
-    </form>
-
-    <hr />
-
-    <% if (!reco || reco.length === 0) { %>
-      <p>Aucune reco pour l’instant.</p>
-      <p>Pour en générer :</p>
-      <ol>
-        <li>Follow quelqu’un (A → B)</li>
-        <li>Connecte-toi en B et follow quelqu’un d’autre (B → C)</li>
-        <li>Reviens en A et recharge cette page</li>
-      </ol>
-    <% } %>
-
-    <% (reco || []).forEach(u => { %>
-      <div style="border:1px solid #ddd; padding:12px; margin:12px 0;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <strong style="font-size:18px;"><%= u.displayName %></strong>
-          <form method="POST" action="/users/<%= u.id %>/follow">
-            <button type="submit">Follow / Unfollow</button>
-          </form>
-        </div>
-
-        <div style="margin-top:8px;">
-          <div><b>Score</b> : <%= u.score %></div>
-          <div><b>Mutuals</b> : <%= u.mutuals %>
-            <% if (u.mutualNames && u.mutualNames.length) { %>
-              — (<%= u.mutualNames.join(", ") %>)
-            <% } %>
-          </div>
-          <div><b>Jaccard intérêts</b> : <%= u.jaccard %></div>
-
-          <% if (u.commonInterests && u.commonInterests.length) { %>
-            <div><b>Intérêts en commun</b> : <%= u.commonInterests.join(", ") %></div>
-          <% } else { %>
-            <div><i>Pas d’intérêt en commun détecté</i></div>
-          <% } %>
-        </div>
+<div class="container my-4">
+  <div class="row">
+    <div class="col-12">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>
+          <i class="bi bi-stars"></i> Recommandations FOAF + Intérêts
+        </h2>
+        <form method="POST" action="/auth/logout">
+          <button type="submit" class="btn btn-outline-danger">
+            <i class="bi bi-box-arrow-right"></i> Logout
+          </button>
+        </form>
       </div>
-    <% }) %>
-  </body>
-</html>
+
+      <hr class="mb-4">
+
+      <% if (!reco || reco.length === 0) { %>
+        <div class="alert alert-info">
+          <h5 class="alert-heading"><i class="bi bi-info-circle"></i> Aucune recommandation pour l'instant</h5>
+          <p>Pour en générer, suivez ces étapes :</p>
+          <ol>
+            <li>Follow quelqu'un (A → B)</li>
+            <li>Connecte-toi en B et follow quelqu'un d'autre (B → C)</li>
+            <li>Reviens en A et recharge cette page</li>
+          </ol>
+        </div>
+      <% } %>
+
+      <div class="row g-3">
+        <% (reco || []).forEach(u => { %>
+          <div class="col-12 col-lg-6">
+            <div class="card h-100">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                  <h5 class="card-title mb-0">
+                    <i class="bi bi-person-circle"></i> <%= u.displayName %>
+                  </h5>
+                  <form method="POST" action="/users/<%= u.id %>/follow">
+                    <button type="submit" class="btn btn-primary btn-sm">
+                      <i class="bi bi-person-plus"></i> Follow
+                    </button>
+                  </form>
+                </div>
+
+                <div class="mb-2">
+                  <span class="badge bg-secondary">
+                    <i class="bi bi-graph-up"></i> Score: <%= u.score %>
+                  </span>
+                  <span class="badge bg-primary">
+                    <i class="bi bi-people"></i> Mutuals: <%= u.mutuals %>
+                  </span>
+                </div>
+
+                <% if (u.mutualNames && u.mutualNames.length) { %>
+                  <div class="mb-2">
+                    <small class="text-muted">
+                      <i class="bi bi-arrow-through-heart"></i>
+                      Amis en commun : <strong><%= u.mutualNames.join(", ") %></strong>
+                    </small>
+                  </div>
+                <% } %>
+
+                <% if (u.commonInterests && u.commonInterests.length) { %>
+                  <div class="mt-3">
+                    <small class="text-muted d-block mb-2">
+                      <i class="bi bi-tag"></i> Intérêts en commun :
+                    </small>
+                    <div class="d-flex flex-wrap gap-1">
+                      <% u.commonInterests.forEach(interest => { %>
+                        <span class="badge interest-tag"><%= interest %></span>
+                      <% }) %>
+                    </div>
+                  </div>
+                <% } else { %>
+                  <div class="mt-3">
+                    <small class="text-muted fst-italic">
+                      <i class="bi bi-x-circle"></i> Pas d'intérêt en commun détecté
+                    </small>
+                  </div>
+                <% } %>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include("../partials/footer") %>

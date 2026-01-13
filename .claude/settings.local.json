@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l \"c:\\\\Users\\\\Pierre\\\\Documents\\\\Partage\\\\tsn\\\\backend\\\\src\"/**/*.js)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npm install:*)",
+      "Bash(npm start)",
+      "Bash(cat:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}
