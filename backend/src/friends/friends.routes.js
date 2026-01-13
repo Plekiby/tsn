@@ -18,22 +18,49 @@ async function areFriends(userId1, userId2) {
 }
 
 friendsRouter.get("/", requireAuth, async (req, res) => {
-  const incoming = await prisma.friendRequest.findMany({
-    where: { toUserId: req.user.id, status: "PENDING" },
-    orderBy: { createdAt: "desc" },
-    include: { fromUser: { select: { id: true, displayName: true } } }
+  const tab = req.query.tab || "followers"; // "followers", "following"
+  const userId = req.query.userId ? Number(req.query.userId) : req.user.id;
+
+  if (!Number.isFinite(userId)) {
+    return res.redirect("/friends");
+  }
+
+  let followers = [];
+  let following = [];
+  let viewingUser = null;
+
+  // Récupérer les infos de l'utilisateur consulté
+  viewingUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, displayName: true }
   });
 
-  const friendships = await prisma.friendship.findMany({
-    where: { OR: [{ userAId: req.user.id }, { userBId: req.user.id }] },
-    include: {
-      userA: { select: { id: true, displayName: true } },
-      userB: { select: { id: true, displayName: true } }
-    }
-  });
+  if (!viewingUser) {
+    return res.redirect("/friends");
+  }
 
-  const friends = friendships.map(f => (f.userAId === req.user.id ? f.userB : f.userA));
-  res.render("friends/index", { user: req.user, incoming, friends });
+  if (tab === "followers") {
+    const follows = await prisma.follow.findMany({
+      where: { followedId: userId },
+      include: { follower: { select: { id: true, displayName: true, avatar: true } } }
+    });
+    followers = follows.map(f => f.follower);
+  } else if (tab === "following") {
+    const follows = await prisma.follow.findMany({
+      where: { followerId: userId },
+      include: { followed: { select: { id: true, displayName: true, avatar: true } } }
+    });
+    following = follows.map(f => f.followed);
+  }
+
+  res.render("friends/index", { 
+    user: req.user, 
+    followers, 
+    following,
+    tab,
+    viewingUserId: userId,
+    viewingUserName: viewingUser.displayName
+  });
 });
 
 friendsRouter.post("/request/:id", requireAuth, async (req, res) => {

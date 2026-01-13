@@ -76,6 +76,25 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
               select: { name: true }
             }
           }
+        },
+        posts: {
+          orderBy: { createdAt: "desc" },
+          take: 10,
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            _count: {
+              select: {
+                comments: true,
+                likes: true
+              }
+            },
+            likes: {
+              where: { userId: req.user.id },
+              select: { userId: true }
+            }
+          }
         }
       }
     });
@@ -102,7 +121,8 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
       profile,
       isFollowing: !!isFollowing,
       isOwnProfile,
-      interests: profile.userInterests.map(ui => ui.interest.name)
+      interests: profile.userInterests.map(ui => ui.interest.name),
+      posts: profile.posts
     });
   } catch (error) {
     console.error("Error loading profile:", error);

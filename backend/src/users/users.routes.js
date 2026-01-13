@@ -97,7 +97,7 @@ usersRouter.get("/recommendations", requireAuth, async (req, res) => {
 
   const mutualNameById = new Map(mutualUsers.map(u => [u.id, u.displayName]));
 
-  // 7) Score final = mutuals + 2 * Jaccard (simple, stable)
+  // 7) Score final = mutuals + commonInterests (plus simple et équitable)
   function jaccard(aSet, bSet) {
     const a = aSet || new Set();
     const b = bSet || new Set();
@@ -119,11 +119,12 @@ usersRouter.get("/recommendations", requireAuth, async (req, res) => {
       const jac = jaccard(myInterestIds, candSet);
 
       const commonInterests = candCommonNames.get(candId) || [];
+      const commonCount = commonInterests.length;
 
       const mutualListIds = mutualWho.has(candId) ? [...mutualWho.get(candId)] : [];
       const mutualNames = mutualListIds.map(id => mutualNameById.get(id) || `#${id}`);
 
-      const score = mutuals + 1 * jac;
+      const score = mutuals * 10 + commonCount;
 
       return {
         id: candId,
@@ -147,8 +148,10 @@ usersRouter.get("/recommendations", requireAuth, async (req, res) => {
  */
 usersRouter.post("/:id/follow", requireAuth, async (req, res) => {
   const targetId = Number(req.params.id);
+  const back = req.get("referer") || "/users/recommendations";
+
   if (!Number.isFinite(targetId) || targetId === req.user.id) {
-    return res.redirect("/users/recommendations");
+    return res.redirect(back);
   }
 
   try {
@@ -157,7 +160,7 @@ usersRouter.post("/:id/follow", requireAuth, async (req, res) => {
     });
     await createNotification({
       type: "FOLLOW",
-      toUserId: targetUserId,
+      toUserId: targetId,
       fromUserId: req.user.id
     });
   } catch {
@@ -170,7 +173,7 @@ usersRouter.post("/:id/follow", requireAuth, async (req, res) => {
       .catch(() => {});
   }
 
-  res.redirect("/users/recommendations");
+  res.redirect(back);
 });
 
 /**
