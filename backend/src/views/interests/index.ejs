@@ -53,7 +53,6 @@
                       </span>
                     </div>
                     <form method="POST" action="/interests/<%= i.id %>/toggle">
-                      <% const selected = mySet.has(i.id); %>
                       <button type="submit" class="btn btn-<%= selected ? 'outline-danger' : 'outline-primary' %> btn-sm">
                         <i class="bi bi-<%= selected ? 'x-circle' : 'plus-circle' %>"></i>
                         <%= selected ? "Retirer" : "Ajouter" %>
