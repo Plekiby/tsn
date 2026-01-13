@@ -54,14 +54,7 @@ postsRouter.get("/feed", requireAuth, async (req, res) => {
     whereOr.push({ visibility: "FRIENDS", authorId: { in: friendIds } });
   }
   if (groupIds.length > 0) {
-  whereOr.push({ groupId: { in: groupIds } });
-  }
-  if (groupIds.length > 0) {
-  whereOr.push({
-    group: {
-      id: { in: groupIds }
-    }
-  });
+    whereOr.push({ groupId: { in: groupIds } });
   }
 
   // 5) récupérer les posts visibles + compteurs + derniers comments (pour affichage)
@@ -195,7 +188,7 @@ postsRouter.post("/:id/like", requireAuth, async (req, res) => {
 
   const post = await prisma.post.findUnique({
     where: { id: postId },
-    select: { id: true, authorId: true }
+    select: { id: true, authorId: true, groupId: true }
   });
   if (!post) return res.redirect("/posts/feed");
 
@@ -215,6 +208,11 @@ postsRouter.post("/:id/like", requireAuth, async (req, res) => {
       .catch(() => {});
   }
 
-  res.redirect("/posts/feed");
+  // Rediriger vers le groupe si c'est un post de groupe, sinon vers le feed
+  if (post.groupId) {
+    res.redirect(`/groups/${post.groupId}`);
+  } else {
+    res.redirect("/posts/feed");
+  }
 });
 

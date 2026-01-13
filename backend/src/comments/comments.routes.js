@@ -29,7 +29,7 @@ commentsRoutes.post("/posts/:postId/comments", requireAuth, async (req, res) => 
 
   const post = await prisma.post.findUnique({
     where: { id: postId },
-    select: { id: true, authorId: true, visibility: true }
+    select: { id: true, authorId: true, visibility: true, groupId: true }
   });
 
   if (!post) return res.redirect("/posts/feed");
@@ -61,6 +61,10 @@ commentsRoutes.post("/posts/:postId/comments", requireAuth, async (req, res) => 
     });
 
 
+  // Rediriger vers le groupe si c'est un post de groupe
+  if (post.groupId) {
+    return res.redirect(`/groups/${post.groupId}`);
+  }
   return res.redirect("/posts/feed");
 });
 
@@ -75,7 +79,7 @@ commentsRoutes.post("/comments/:commentId/delete", requireAuth, async (req, res)
       id: true,
       userId: true,
       postId: true,
-      post: { select: { authorId: true } }
+      post: { select: { authorId: true, groupId: true } }
     }
   });
 
@@ -87,5 +91,10 @@ commentsRoutes.post("/comments/:commentId/delete", requireAuth, async (req, res)
   if (!isOwner && !isPostOwner) return res.status(403).send("Forbidden");
 
   await prisma.comment.delete({ where: { id: commentId } });
+  
+  // Rediriger vers le groupe si c'est un post de groupe
+  if (comment.post.groupId) {
+    return res.redirect(`/groups/${comment.post.groupId}`);
+  }
   return res.redirect("/posts/feed");
 });

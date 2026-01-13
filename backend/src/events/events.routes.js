@@ -45,6 +45,11 @@ eventsRouter.post("/:id/rsvp", requireAuth, async (req, res) => {
     create: { eventId, userId: req.user.id, status: safeStatus }
   });
 
+  // Récupérer le nombre de participants GOING
+  const goingCount = await prisma.eventAttendee.count({
+    where: { eventId, status: "GOING" }
+  });
+
   // notif au creator (si pas lui-même)
   if (ev.creatorId !== req.user.id) {
     await createNotification({
@@ -53,6 +58,11 @@ eventsRouter.post("/:id/rsvp", requireAuth, async (req, res) => {
       fromUserId: req.user.id,
       eventId: ev.id
     });
+  }
+
+  // Si AJAX, retourner JSON
+  if (req.headers['x-requested-with'] === 'XMLHttpRequest') {
+    return res.json({ success: true, goingCount, status: safeStatus });
   }
 
   res.redirect(`/groups/${ev.groupId}`);

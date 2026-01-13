@@ -3,9 +3,53 @@
 <div class="container my-4">
   <div class="row">
     <div class="col-12">
-      <h2 class="mb-3">
-        <i class="bi bi-people"></i> <%= group.name %>
-      </h2>
+      <div class="d-flex justify-content-between align-items-start mb-4">
+        <div>
+          <h2 class="mb-2">
+            <i class="bi bi-people"></i> <%= group.name %>
+          </h2>
+          <% if (group.description) { %>
+            <p class="text-muted mb-0"><%= group.description %></p>
+          <% } %>
+        </div>
+        <div class="text-end">
+          <div class="badge bg-secondary">
+            <i class="bi bi-person-fill"></i> <%= group._count.members %> membres
+          </div>
+        </div>
+      </div>
+
+      <!-- Statistiques rapides -->
+      <div class="row g-2 mb-4">
+        <% 
+          const upcomingCount = events ? events.filter(e => new Date(e.startAt) > new Date()).length : 0;
+          const postsCount = posts ? posts.length : 0;
+        %>
+        <div class="col-auto">
+          <div class="card text-center" style="min-width: 140px;">
+            <div class="card-body py-3">
+              <div class="h4 mb-1 text-primary"><%= upcomingCount %></div>
+              <small class="text-muted">Événements à venir</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-auto">
+          <div class="card text-center" style="min-width: 140px;">
+            <div class="card-body py-3">
+              <div class="h4 mb-1 text-success"><%= postsCount %></div>
+              <small class="text-muted">Posts</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-auto">
+          <div class="card text-center" style="min-width: 140px;">
+            <div class="card-body py-3">
+              <div class="h4 mb-1 text-info"><%= group._count.members %></div>
+              <small class="text-muted">Membres</small>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <% // CHANGE ICI si tu es en prod AlwaysData : %>
       <% const baseUrl = "http://localhost:3000"; %>
@@ -157,111 +201,190 @@
 
         <hr class="mb-4">
 
-        <!-- Events -->
+        <!-- Events Section with Calendar -->
         <div class="mb-5">
-          <h3 class="h5 mb-3"><i class="bi bi-calendar-event"></i> Events</h3>
+          <h3 class="h5 mb-3"><i class="bi bi-calendar-event"></i> Événements</h3>
 
-          <!-- Créer un event -->
-          <div class="card mb-4">
-            <div class="card-header bg-secondary text-white">
-              <h6 class="mb-0"><i class="bi bi-plus-circle"></i> Créer un event</h6>
+          <!-- Tabs: Calendar / List -->
+          <ul class="nav nav-tabs mb-3" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="calendar-tab" data-bs-toggle="tab" data-bs-target="#calendar" type="button">
+                <i class="bi bi-calendar3"></i> Calendrier
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="list-tab" data-bs-toggle="tab" data-bs-target="#list" type="button">
+                <i class="bi bi-list"></i> Tous les événements
+              </button>
+            </li>
+          </ul>
+
+          <!-- Tab Content -->
+          <div class="tab-content">
+            <!-- Calendar Tab -->
+            <div class="tab-pane fade show active" id="calendar" role="tabpanel">
+              <div class="card mb-4">
+                <div class="card-body">
+                  <div id="eventCalendar" class="event-calendar"></div>
+                </div>
+              </div>
             </div>
-            <div class="card-body">
-              <form method="POST" action="/groups/<%= group.id %>/events">
-                <div class="mb-3">
-                  <label for="title" class="form-label">Titre</label>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="title"
-                    name="title"
-                    placeholder="Titre de l'événement"
-                    required
-                  />
+
+            <!-- List Tab -->
+            <div class="tab-pane fade" id="list" role="tabpanel">
+              <!-- Créer un event -->
+              <div class="card mb-4">
+                <div class="card-header bg-secondary text-white">
+                  <h6 class="mb-0"><i class="bi bi-plus-circle"></i> Créer un événement</h6>
                 </div>
+                <div class="card-body">
+                  <form method="POST" action="/groups/<%= group.id %>/events">
+                    <div class="mb-3">
+                      <label for="title" class="form-label">Titre</label>
+                      <input
+                        type="text"
+                        class="form-control"
+                        id="title"
+                        name="title"
+                        placeholder="Titre de l'événement"
+                        required
+                      />
+                    </div>
 
-                <div class="mb-3">
-                  <label for="location" class="form-label">Lieu (optionnel)</label>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="location"
-                    name="location"
-                    placeholder="Lieu"
-                  />
-                </div>
+                    <div class="mb-3">
+                      <label for="location" class="form-label">Lieu (optionnel)</label>
+                      <input
+                        type="text"
+                        class="form-control"
+                        id="location"
+                        name="location"
+                        placeholder="Lieu"
+                      />
+                    </div>
 
-                <div class="mb-3">
-                  <label for="description" class="form-label">Description (optionnel)</label>
-                  <textarea
-                    class="form-control"
-                    id="description"
-                    name="description"
-                    rows="3"
-                    placeholder="Description..."
-                  ></textarea>
-                </div>
+                    <div class="mb-3">
+                      <label for="description" class="form-label">Description (optionnel)</label>
+                      <textarea
+                        class="form-control"
+                        id="description"
+                        name="description"
+                        rows="3"
+                        placeholder="Description..."
+                      ></textarea>
+                    </div>
 
-                <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label for="startAt" class="form-label">Début</label>
-                    <input type="datetime-local" class="form-control" id="startAt" name="startAt" required />
-                  </div>
-                  <div class="col-md-6 mb-3">
-                    <label for="endAt" class="form-label">Fin</label>
-                    <input type="datetime-local" class="form-control" id="endAt" name="endAt" />
-                  </div>
-                </div>
-
-                <button type="submit" class="btn btn-secondary">
-                  <i class="bi bi-calendar-plus"></i> Créer
-                </button>
-              </form>
-            </div>
-          </div>
-
-          <!-- Liste des events -->
-          <% if (!events || events.length === 0) { %>
-            <div class="alert alert-info">
-              <i class="bi bi-info-circle"></i> Aucun event.
-            </div>
-          <% } else { %>
-            <div class="row g-3">
-              <% events.forEach(ev => { %>
-                <div class="col-12">
-                  <div class="card">
-                    <div class="card-body">
-                      <h5 class="card-title"><%= ev.title %></h5>
-                      <div class="small text-muted mb-2">
-                        <i class="bi bi-clock"></i> <%= new Date(ev.startAt).toLocaleString() %>
-                        <% if (ev.location) { %>
-                          • <i class="bi bi-geo-alt"></i> <%= ev.location %>
-                        <% } %>
-                        • <i class="bi bi-person"></i> <%= ev.creator.displayName %>
-                        • <i class="bi bi-people"></i> <%= ev._count.attendees %> participants
+                    <div class="row">
+                      <div class="col-md-6 mb-3">
+                        <label for="startAt" class="form-label">Début</label>
+                        <input type="datetime-local" class="form-control" id="startAt" name="startAt" required />
                       </div>
+                      <div class="col-md-6 mb-3">
+                        <label for="endAt" class="form-label">Fin</label>
+                        <input type="datetime-local" class="form-control" id="endAt" name="endAt" />
+                      </div>
+                    </div>
 
-                      <% if (ev.description) { %>
-                        <p class="card-text"><%= ev.description %></p>
-                      <% } %>
+                    <button type="submit" class="btn btn-secondary">
+                      <i class="bi bi-calendar-plus"></i> Créer
+                    </button>
+                  </form>
+                </div>
+              </div>
 
-                      <form method="POST" action="/events/<%= ev.id %>/rsvp" class="mt-2">
-                        <div class="input-group input-group-sm" style="max-width: 300px;">
-                          <select class="form-select" name="status">
-                            <option value="GOING">GOING</option>
-                            <option value="DECLINED">DECLINED</option>
-                          </select>
-                          <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-check-circle"></i> RSVP
-                          </button>
+              <!-- Liste des events -->
+              <% if (!events || events.length === 0) { %>
+                <div class="alert alert-info">
+                  <i class="bi bi-info-circle"></i> Aucun événement pour le moment.
+                </div>
+              <% } else { %>
+                <!-- Prochains événements -->
+                <div class="mb-4">
+                  <h6 class="fw-bold mb-3">Prochains événements</h6>
+                  <div class="row g-3">
+                    <% const now = new Date();
+                       const upcomingEvents = events.filter(e => new Date(e.startAt) >= now).slice(0, 5); %>
+                    <% if (upcomingEvents.length === 0) { %>
+                      <div class="col-12">
+                        <p class="text-muted">Aucun événement prévu.</p>
+                      </div>
+                    <% } else { %>
+                      <% upcomingEvents.forEach(ev => { %>
+                        <div class="col-12">
+                          <div class="card border-left border-primary">
+                            <div class="card-body">
+                              <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                  <h5 class="card-title mb-1"><%= ev.title %></h5>
+                                  <div class="small text-muted mb-2">
+                                    <div><i class="bi bi-calendar"></i> <%= new Date(ev.startAt).toLocaleDateString('fr-FR', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'}) %></div>
+                                    <div><i class="bi bi-clock"></i> <%= new Date(ev.startAt).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'}) %></div>
+                                    <% if (ev.location) { %>
+                                      <div><i class="bi bi-geo-alt"></i> <%= ev.location %></div>
+                                    <% } %>
+                                  </div>
+                                  <% if (ev.description) { %>
+                                    <p class="card-text small mb-0"><%= ev.description.substring(0, 100) %>...</p>
+                                  <% } %>
+                                </div>
+                                <div class="text-center" style="min-width: 70px;">
+                                  <span class="badge bg-primary"><%= ev.goingCount || 0 %></span>
+                                  <div class="small">participant<%= ev.goingCount !== 1 ? 's' : '' %></div>
+                                  <% if (ev.userRsvp) { %>
+                                    <div class="small text-success fw-bold" style="margin-top: 4px;">
+                                      <i class="bi bi-check-circle"></i>
+                                      <%= ev.userRsvp === 'GOING' ? 'Tu y vas' : 'Tu refuses' %>
+                                    </div>
+                                  <% } %>
+                                </div>
+                              </div>
+                              
+                              <form method="POST" action="/events/<%= ev.id %>/rsvp" class="mt-3" onsubmit="handleEventRsvp(event, '<%= ev.id %>')">
+                                <div class="input-group input-group-sm" style="max-width: 280px;">
+                                  <select class="form-select" name="status" id="status_<%= ev.id %>">
+                                    <option value="GOING" <%= ev.userRsvp === 'GOING' ? 'selected' : '' %>>Je viens</option>
+                                    <option value="DECLINED" <%= ev.userRsvp === 'DECLINED' ? 'selected' : '' %>>Je ne viens pas</option>
+                                  </select>
+                                  <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-check-circle"></i> Répondre
+                                  </button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
                         </div>
-                      </form>
+                      <% }) %>
+                    <% } %>
+                  </div>
+                </div>
+
+                <!-- Événements passés -->
+                <% const pastEvents = events.filter(e => new Date(e.startAt) < now); %>
+                <% if (pastEvents.length > 0) { %>
+                  <div>
+                    <h6 class="fw-bold mb-3 text-muted">Événements passés</h6>
+                    <div class="row g-3">
+                      <% pastEvents.slice(0, 3).forEach(ev => { %>
+                        <div class="col-12">
+                          <div class="card opacity-75">
+                            <div class="card-body">
+                              <h5 class="card-title"><%= ev.title %></h5>
+                              <div class="small text-muted">
+                                <i class="bi bi-clock"></i> <%= new Date(ev.startAt).toLocaleString('fr-FR') %>
+                                <% if (ev.location) { %>
+                                  • <i class="bi bi-geo-alt"></i> <%= ev.location %>
+                                <% } %>
+                                • <i class="bi bi-people"></i> <%= ev.goingCount || 0 %> participant<%= ev.goingCount !== 1 ? 's' : '' %>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      <% }) %>
                     </div>
                   </div>
-                </div>
-              <% }) %>
+                <% } %>
+              <% } %>
             </div>
-          <% } %>
+          </div>
         </div>
 
         <hr class="mb-4">
@@ -334,5 +457,258 @@
     </div>
   </div>
 </div>
+
+<style>
+.event-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.calendar-header {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding: 10px 0;
+}
+
+.calendar-header button {
+  padding: 5px 15px;
+  font-size: 0.9rem;
+}
+
+.day-header {
+  text-align: center;
+  font-weight: bold;
+  padding: 10px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  padding: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+
+.calendar-day:hover {
+  border-color: #007bff;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
+}
+
+.calendar-day.other-month {
+  background: #f9f9f9;
+  color: #999;
+}
+
+.calendar-day.today {
+  border: 2px solid #007bff;
+  font-weight: bold;
+}
+
+.calendar-day.has-events {
+  background: linear-gradient(135deg, #e3f2fd 0%, #fff 100%);
+}
+
+.calendar-day .date-num {
+  font-weight: bold;
+  margin-bottom: 2px;
+}
+
+.calendar-day .event-dots {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.event-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #007bff;
+}
+
+.border-left {
+  border-left: 4px solid !important;
+}
+</style>
+
+<script>
+function renderEventCalendar() {
+  const events = <%- JSON.stringify(events || []) %>;
+  const container = document.getElementById('eventCalendar');
+  const today = new Date();
+  let currentDate = new Date(today.getFullYear(), today.getMonth(), 1);
+  
+  const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+                     'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+  const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  
+  function renderMonth(date) {
+    container.innerHTML = '';
+    
+    // Header with nav
+    const header = document.createElement('div');
+    header.className = 'calendar-header';
+    header.innerHTML = `
+      <button onclick="previousMonth()">&lt; Mois précédent</button>
+      <h5 class="mb-0">${monthNames[date.getMonth()]} ${date.getFullYear()}</h5>
+      <button onclick="nextMonth()">Mois suivant &gt;</button>
+    `;
+    container.parentElement.insertBefore(header, container);
+    
+    // Day headers
+    dayNames.forEach(day => {
+      const dayHeader = document.createElement('div');
+      dayHeader.className = 'day-header';
+      dayHeader.textContent = day;
+      container.appendChild(dayHeader);
+    });
+    
+    // Get first day of month and last day
+    const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+    const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    const prevLastDay = new Date(date.getFullYear(), date.getMonth(), 0);
+    
+    const firstDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+    
+    // Previous month days
+    for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+      const dayNum = prevLastDay.getDate() - i;
+      const dayDiv = createDayElement(dayNum, 'other-month', null);
+      container.appendChild(dayDiv);
+    }
+    
+    // Current month days
+    for (let i = 1; i <= lastDay.getDate(); i++) {
+      const cellDate = new Date(date.getFullYear(), date.getMonth(), i);
+      const dayEvents = events.filter(e => {
+        const eventDate = new Date(e.startAt);
+        return eventDate.toDateString() === cellDate.toDateString();
+      });
+      
+      const isToday = cellDate.toDateString() === today.toDateString();
+      const dayDiv = createDayElement(i, isToday ? 'today' : '', dayEvents);
+      container.appendChild(dayDiv);
+    }
+    
+    // Next month days
+    const remainingCells = 42 - (firstDayOfWeek + lastDay.getDate());
+    for (let i = 1; i <= remainingCells; i++) {
+      const dayDiv = createDayElement(i, 'other-month', null);
+      container.appendChild(dayDiv);
+    }
+  }
+  
+  function createDayElement(dayNum, classes, dayEvents) {
+    const dayDiv = document.createElement('div');
+    dayDiv.className = 'calendar-day ' + classes;
+    if (dayEvents && dayEvents.length > 0) {
+      dayDiv.classList.add('has-events');
+    }
+    
+    let html = `<div class="date-num">${dayNum}</div>`;
+    if (dayEvents && dayEvents.length > 0) {
+      html += '<div class="event-dots">';
+      for (let i = 0; i < Math.min(dayEvents.length, 3); i++) {
+        html += '<div class="event-dot"></div>';
+      }
+      html += '</div>';
+    }
+    dayDiv.innerHTML = html;
+    
+    if (dayEvents && dayEvents.length > 0) {
+      dayDiv.title = dayEvents.map(e => e.title).join(', ');
+    }
+    
+    return dayDiv;
+  }
+  
+  window.previousMonth = function() {
+    currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1);
+    renderMonth(currentDate);
+  };
+  
+  window.nextMonth = function() {
+    currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1);
+    renderMonth(currentDate);
+  };
+  
+  renderMonth(currentDate);
+}
+
+// Render calendar on page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', renderEventCalendar);
+} else {
+  renderEventCalendar();
+}
+
+// Handle event RSVP with AJAX for live updates
+function handleEventRsvp(event, eventId) {
+  event.preventDefault();
+  
+  const form = event.target;
+  const status = form.querySelector('select[name="status"]').value;
+  
+  fetch(`/events/${eventId}/rsvp`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    body: JSON.stringify({ status })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      // Update counter
+      const badge = form.parentElement.querySelector('.badge');
+      if (badge) {
+        badge.textContent = data.goingCount;
+      }
+      
+      // Show success feedback
+      const btn = form.querySelector('button[type="submit"]');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '<i class="bi bi-check-circle"></i> Confirmé !';
+      btn.classList.add('disabled');
+      
+      setTimeout(() => {
+        btn.innerHTML = originalText;
+        btn.classList.remove('disabled');
+      }, 2000);
+      
+      // Update status display
+      const statusDisplay = form.parentElement.parentElement.querySelector('.text-success');
+      if (!statusDisplay) {
+        const newDisplay = document.createElement('div');
+        newDisplay.className = 'small text-success fw-bold';
+        newDisplay.style.marginTop = '4px';
+        newDisplay.innerHTML = '<i class="bi bi-check-circle"></i> ' + (status === 'GOING' ? 'Tu y vas' : 'Tu refuses');
+        form.parentElement.parentElement.querySelector('.text-center').appendChild(newDisplay);
+      } else {
+        statusDisplay.innerHTML = '<i class="bi bi-check-circle"></i> ' + (status === 'GOING' ? 'Tu y vas' : 'Tu refuses');
+      }
+    }
+  })
+  .catch(err => {
+    console.error('Erreur RSVP:', err);
+    alert('Erreur lors de la mise à jour');
+  });
+}
+</script>
 
 <%- include("../partials/footer") %>

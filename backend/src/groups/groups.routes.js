@@ -124,17 +124,27 @@ groupsRouter.get("/:id", requireAuth, async (req, res) => {
       })
     : [];
 
-  const events = member
-    ? await prisma.event.findMany({
-        where: { groupId },
-        orderBy: { startAt: "asc" },
-        take: 30,
-        include: {
-          creator: { select: { id: true, displayName: true } },
-          _count: { select: { attendees: true } }
+  let events = [];
+  if (member) {
+    const rawEvents = await prisma.event.findMany({
+      where: { groupId },
+      orderBy: { startAt: "asc" },
+      take: 30,
+      include: {
+        creator: { select: { id: true, displayName: true } },
+        attendees: {
+          select: { userId: true, status: true }
         }
-      })
-    : [];
+      }
+    });
+    
+    events = rawEvents.map(ev => ({
+      ...ev,
+      goingCount: ev.attendees.filter(a => a.status === 'GOING').length,
+      userRsvp: ev.attendees.find(a => a.userId === req.user.id)?.status || null,
+      _count: { attendees: ev.attendees.length }
+    }));
+  }
 
   // Utilisateurs non-membres (pour invitations directes)
   const nonMembers = member && (member.role === "OWNER" || member.role === "ADMIN")
@@ -322,5 +332,100 @@ groupsRouter.post("/:id/events", requireAuth, async (req, res) => {
   }
 
   res.redirect(`/groups/${groupId}`);
+});
+
+/**
+ * GET /groups/:id/api/events
+ * Retourne les événements du groupe au format JSON
+ */
+groupsRouter.get("/:id/api/events", requireAuth, async (req, res) => {
+  const groupId = Number(req.params.id);
+  if (!Number.isFinite(groupId)) {
+    return res.json({ error: "Invalid group ID" });
+  }
+
+  try {
+    const group = await prisma.group.findUnique({
+      where: { id: groupId }
+    });
+
+    if (!group) {
+      return res.json({ error: "Group not found" });
+    }
+
+    const member = await getMembership(groupId, req.user.id);
+    if (!member && group.privacy !== "PUBLIC") {
+      return res.json({ error: "Access denied" });
+    }
+
+    const rawEvents = await prisma.event.findMany({
+      where: { groupId },
+      orderBy: { startAt: "asc" },
+      include: {
+        creator: { select: { id: true, displayName: true } },
+        attendees: {
+          select: { userId: true, status: true }
+        }
+      }
+    });
+
+    const events = rawEvents.map(ev => ({
+      ...ev,
+      goingCount: ev.attendees.filter(a => a.status === 'GOING').length,
+      userRsvp: ev.attendees.find(a => a.userId === req.user.id)?.status || null
+    }));
+
+    res.json(events);
+  } catch (error) {
+    console.error("Error fetching events:", error);
+    res.json({ error: "Error fetching events" });
+  }
+});
+
+/**
+ * GET /groups/:id/api/stats
+ * Retourne les statistiques du groupe
+ */
+groupsRouter.get("/:id/api/stats", requireAuth, async (req, res) => {
+  const groupId = Number(req.params.id);
+  if (!Number.isFinite(groupId)) {
+    return res.json({ error: "Invalid group ID" });
+  }
+
+  try {
+    const group = await prisma.group.findUnique({
+      where: { id: groupId }
+    });
+
+    if (!group) {
+      return res.json({ error: "Group not found" });
+    }
+
+    const member = await getMembership(groupId, req.user.id);
+    if (!member && group.privacy !== "PUBLIC") {
+      return res.json({ error: "Access denied" });
+    }
+
+    const now = new Date();
+
+    const [totalMembers, eventCount, upcomingEvents, totalPosts] = await Promise.all([
+      prisma.groupMember.count({ where: { groupId } }),
+      prisma.event.count({ where: { groupId } }),
+      prisma.event.count({ 
+        where: { groupId, startAt: { gte: now } }
+      }),
+      prisma.groupPost.count({ where: { groupId } })
+    ]);
+
+    res.json({
+      totalMembers,
+      eventCount,
+      upcomingEvents,
+      totalPosts
+    });
+  } catch (error) {
+    console.error("Error fetching stats:", error);
+    res.json({ error: "Error fetching stats" });
+  }
 });
 
