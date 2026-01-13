@@ -22,7 +22,7 @@ async function getMembership(groupId, userId) {
 groupsRouter.get("/", requireAuth, async (req, res) => {
   const meId = req.user.id;
 
-  // Récupérer les groupes visibles
+  // Récupérer les groupes disponibles (PUBLIC uniquement et dont je ne suis PAS membre)
   const groups = await query(`
     SELECT
       g.*,
@@ -33,9 +33,9 @@ groupsRouter.get("/", requireAuth, async (req, res) => {
     LEFT JOIN User u ON g.ownerId = u.id
     WHERE
       g.privacy = 'PUBLIC'
-      OR (g.privacy = 'PRIVATE' AND EXISTS (
+      AND NOT EXISTS (
         SELECT 1 FROM GroupMember WHERE groupId = g.id AND userId = ?
-      ))
+      )
     ORDER BY g.createdAt DESC
     LIMIT 50
   `, [meId]);
