@@ -1,15 +1,16 @@
 import express from "express";
 import { requireAuth } from "../auth/auth.middleware.js";
-import { prisma } from "../prisma.js";
+import { query, queryOne } from "../db.js";
 import { getUnreadCount } from "../notifications/notifications.service.js";
 import { createNotification } from "../notifications/notifications.service.js";
 
 export const groupsRouter = express.Router();
 
 async function getMembership(groupId, userId) {
-  return prisma.groupMember.findUnique({
-    where: { groupId_userId: { groupId, userId } }
-  });
+  return queryOne(
+    "SELECT * FROM GroupMember WHERE groupId = ? AND userId = ?",
+    [groupId, userId]
+  );
 }
 
 /**
@@ -21,31 +22,73 @@ async function getMembership(groupId, userId) {
 groupsRouter.get("/", requireAuth, async (req, res) => {
   const meId = req.user.id;
 
-  const groups = await prisma.group.findMany({
-    where: {
-      OR: [
-        { privacy: "PUBLIC" },
-        {
-          privacy: "PRIVATE",
-          members: { some: { userId: meId } }
-        }
-        // SECRET: non listé si non membre
-      ]
+  // Récupérer les groupes visibles
+  const groups = await query(`
+    SELECT
+      g.*,
+      u.id as owner_id,
+      u.displayName as owner_displayName,
+      (SELECT COUNT(*) FROM GroupMember WHERE groupId = g.id) as members_count
+    FROM \`Group\` g
+    LEFT JOIN User u ON g.ownerId = u.id
+    WHERE
+      g.privacy = 'PUBLIC'
+      OR (g.privacy = 'PRIVATE' AND EXISTS (
+        SELECT 1 FROM GroupMember WHERE groupId = g.id AND userId = ?
+      ))
+    ORDER BY g.createdAt DESC
+    LIMIT 50
+  `, [meId]);
+
+  // Transformer les données
+  const groupsData = groups.map(g => ({
+    id: g.id,
+    name: g.name,
+    description: g.description,
+    privacy: g.privacy,
+    ownerId: g.ownerId,
+    createdAt: g.createdAt,
+    owner: {
+      id: g.owner_id,
+      displayName: g.owner_displayName
     },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    include: {
-      owner: { select: { id: true, displayName: true } },
-      _count: { select: { members: true } }
+    _count: {
+      members: g.members_count
     }
-  });
+  }));
 
-  const myMemberships = await prisma.groupMember.findMany({
-    where: { userId: meId },
-    include: { group: true }
-  });
+  // Mes memberships
+  const myMemberships = await query(`
+    SELECT
+      gm.*,
+      g.id as group_id,
+      g.name as group_name,
+      g.description as group_description,
+      g.privacy as group_privacy,
+      g.ownerId as group_ownerId,
+      g.createdAt as group_createdAt
+    FROM GroupMember gm
+    JOIN \`Group\` g ON gm.groupId = g.id
+    WHERE gm.userId = ?
+  `, [meId]);
 
-  res.render("groups/index", { user: req.user, groups, myMemberships });
+  const myMembershipsData = myMemberships.map(m => ({
+    id: m.id,
+    groupId: m.groupId,
+    userId: m.userId,
+    role: m.role,
+    joinedAt: m.joinedAt,
+    group: {
+      id: m.group_id,
+      name: m.group_name,
+      description: m.group_description,
+      privacy: m.group_privacy,
+      ownerId: m.group_ownerId,
+      createdAt: m.group_createdAt
+    }
+  }));
+
+  res.render("groups/index", { user: req.user, groups: groupsData, myMemberships: myMembershipsData });
 });
 
 /**
@@ -62,19 +105,20 @@ groupsRouter.post("/", requireAuth, async (req, res) => {
 
   if (!name) return res.redirect("/groups");
 
-  const group = await prisma.group.create({
-    data: {
-      name,
-      description: description || null,
-      privacy: safePrivacy,
-      ownerId: req.user.id,
-      members: {
-        create: { userId: req.user.id, role: "OWNER" }
-      }
-    }
-  });
+  const result = await query(
+    "INSERT INTO `Group` (name, description, privacy, ownerId, createdAt) VALUES (?, ?, ?, ?, NOW())",
+    [name, description || null, safePrivacy, req.user.id]
+  );
 
-  res.redirect(`/groups/${group.id}`);
+  const groupId = result.insertId;
+
+  // Ajouter l'owner comme membre
+  await query(
+    "INSERT INTO GroupMember (groupId, userId, role, joinedAt) VALUES (?, ?, 'OWNER', NOW())",
+    [groupId, req.user.id]
+  );
+
+  res.redirect(`/groups/${groupId}`);
 });
 
 /**
@@ -86,14 +130,34 @@ groupsRouter.get("/:id", requireAuth, async (req, res) => {
   const groupId = Number(req.params.id);
   if (!Number.isFinite(groupId)) return res.redirect("/groups");
 
-  const group = await prisma.group.findUnique({
-    where: { id: groupId },
-    include: {
-      owner: { select: { id: true, displayName: true } },
-      _count: { select: { members: true } }
+  const groupData = await queryOne(`
+    SELECT
+      g.*,
+      u.id as owner_id,
+      u.displayName as owner_displayName,
+      (SELECT COUNT(*) FROM GroupMember WHERE groupId = g.id) as members_count
+    FROM \`Group\` g
+    LEFT JOIN User u ON g.ownerId = u.id
+    WHERE g.id = ?
+  `, [groupId]);
+
+  if (!groupData) return res.redirect("/groups");
+
+  const group = {
+    id: groupData.id,
+    name: groupData.name,
+    description: groupData.description,
+    privacy: groupData.privacy,
+    ownerId: groupData.ownerId,
+    createdAt: groupData.createdAt,
+    owner: {
+      id: groupData.owner_id,
+      displayName: groupData.owner_displayName
+    },
+    _count: {
+      members: groupData.members_count
     }
-  });
-  if (!group) return res.redirect("/groups");
+  };
 
   const member = await getMembership(groupId, req.user.id);
 
@@ -106,72 +170,127 @@ groupsRouter.get("/:id", requireAuth, async (req, res) => {
   const inviteToken = req.query.inviteToken ? String(req.query.inviteToken) : undefined;
 
   // posts/events visibles seulement si membre
-  const posts = member
-    ? await prisma.post.findMany({
-        where: { groupId },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-        include: {
-          author: { select: { id: true, displayName: true } },
-          likes: { select: { userId: true } },
-          comments: {
-            orderBy: { createdAt: "desc" },
-            take: 3,
-            include: { user: { select: { id: true, displayName: true } } }
-          },
-          _count: { select: { likes: true, comments: true } }
-        }
-      })
-    : [];
+  let posts = [];
+  if (member) {
+    const postsData = await query(`
+      SELECT
+        p.*,
+        u.id as author_id,
+        u.displayName as author_displayName,
+        (SELECT COUNT(*) FROM \`Like\` WHERE postId = p.id) as likes_count,
+        (SELECT COUNT(*) FROM Comment WHERE postId = p.id) as comments_count
+      FROM Post p
+      LEFT JOIN User u ON p.authorId = u.id
+      WHERE p.groupId = ?
+      ORDER BY p.createdAt DESC
+      LIMIT 50
+    `, [groupId]);
+
+    // Récupérer les likes de chaque post
+    const postIds = postsData.map(p => p.id);
+    const likes = postIds.length > 0 ? await query(`
+      SELECT postId, userId FROM \`Like\` WHERE postId IN (${postIds.map(() => '?').join(',')})
+    `, postIds) : [];
+
+    // Récupérer les 3 derniers commentaires de chaque post
+    const comments = postIds.length > 0 ? await query(`
+      SELECT
+        c.*,
+        u.id as user_id,
+        u.displayName as user_displayName
+      FROM Comment c
+      JOIN User u ON c.userId = u.id
+      WHERE c.postId IN (${postIds.map(() => '?').join(',')})
+      ORDER BY c.createdAt DESC
+    `, postIds) : [];
+
+    posts = postsData.map(p => ({
+      id: p.id,
+      content: p.content,
+      visibility: p.visibility,
+      authorId: p.authorId,
+      groupId: p.groupId,
+      createdAt: p.createdAt,
+      author: {
+        id: p.author_id,
+        displayName: p.author_displayName
+      },
+      likes: likes.filter(l => l.postId === p.id).map(l => ({ userId: l.userId })),
+      comments: comments
+        .filter(c => c.postId === p.id)
+        .slice(0, 3)
+        .map(c => ({
+          id: c.id,
+          content: c.content,
+          postId: c.postId,
+          userId: c.userId,
+          createdAt: c.createdAt,
+          user: {
+            id: c.user_id,
+            displayName: c.user_displayName
+          }
+        })),
+      _count: {
+        likes: p.likes_count,
+        comments: p.comments_count
+      }
+    }));
+  }
 
   let events = [];
   if (member) {
-    const rawEvents = await prisma.event.findMany({
-      where: { groupId },
-      orderBy: { startAt: "asc" },
-      take: 30,
-      include: {
-        creator: { select: { id: true, displayName: true } },
-        attendees: {
-          select: { userId: true, status: true }
-        }
-      }
+    const rawEvents = await query(`
+      SELECT
+        e.*,
+        u.id as creator_id,
+        u.displayName as creator_displayName
+      FROM Event e
+      LEFT JOIN User u ON e.creatorId = u.id
+      WHERE e.groupId = ?
+      ORDER BY e.startAt ASC
+      LIMIT 30
+    `, [groupId]);
+
+    const eventIds = rawEvents.map(e => e.id);
+    const attendees = eventIds.length > 0 ? await query(`
+      SELECT eventId, userId, status FROM EventAttendee WHERE eventId IN (${eventIds.map(() => '?').join(',')})
+    `, eventIds) : [];
+
+    events = rawEvents.map(ev => {
+      const evAttendees = attendees.filter(a => a.eventId === ev.id);
+      return {
+        id: ev.id,
+        title: ev.title,
+        location: ev.location,
+        description: ev.description,
+        startAt: ev.startAt,
+        endAt: ev.endAt,
+        groupId: ev.groupId,
+        creatorId: ev.creatorId,
+        createdAt: ev.createdAt,
+        creator: {
+          id: ev.creator_id,
+          displayName: ev.creator_displayName
+        },
+        attendees: evAttendees,
+        goingCount: evAttendees.filter(a => a.status === 'GOING').length,
+        userRsvp: evAttendees.find(a => a.userId === req.user.id)?.status || null,
+        _count: { attendees: evAttendees.length }
+      };
     });
-    
-    events = rawEvents.map(ev => ({
-      ...ev,
-      goingCount: ev.attendees.filter(a => a.status === 'GOING').length,
-      userRsvp: ev.attendees.find(a => a.userId === req.user.id)?.status || null,
-      _count: { attendees: ev.attendees.length }
-    }));
   }
 
   // Utilisateurs non-membres (pour invitations directes)
   const nonMembers = member && (member.role === "OWNER" || member.role === "ADMIN")
-    ? await prisma.user.findMany({
-        where: {
-          AND: [
-            { id: { not: req.user.id } },
-            {
-              NOT: {
-                groupMembers: {
-                  some: { groupId }
-                }
-              }
-            },
-            {
-              NOT: {
-                groupInvitesReceived: {
-                  some: { groupId }
-                }
-              }
-            }
-          ]
-        },
-        select: { id: true, displayName: true, email: true },
-        take: 20,
-        orderBy: { displayName: "asc" }
-      })
+    ? await query(`
+        SELECT u.id, u.displayName, u.email
+        FROM User u
+        WHERE u.id != ?
+          AND NOT EXISTS (SELECT 1 FROM GroupMember WHERE groupId = ? AND userId = u.id)
+          AND NOT EXISTS (SELECT 1 FROM GroupInvite WHERE groupId = ? AND toUserId = u.id)
+        ORDER BY u.displayName ASC
+        LIMIT 20
+      `, [req.user.id, groupId, groupId])
     : [];
 
     const unreadCount = await getUnreadCount(req.user.id);
@@ -196,18 +315,17 @@ groupsRouter.post("/:id/join", requireAuth, async (req, res) => {
   const groupId = Number(req.params.id);
   if (!Number.isFinite(groupId)) return res.redirect("/groups");
 
-  const group = await prisma.group.findUnique({ where: { id: groupId } });
+  const group = await queryOne("SELECT * FROM `Group` WHERE id = ?", [groupId]);
   if (!group) return res.redirect("/groups");
 
   if (group.privacy === "SECRET") {
     return res.status(403).send("Invite only group");
   }
 
-  await prisma.groupMember
-    .create({
-      data: { groupId, userId: req.user.id, role: "MEMBER" }
-    })
-    .catch(() => {});
+  await query(
+    "INSERT INTO GroupMember (groupId, userId, role, joinedAt) VALUES (?, ?, 'MEMBER', NOW())",
+    [groupId, req.user.id]
+  ).catch(() => {});
 
   await createNotification({
     type: "GROUP_JOIN",
@@ -231,9 +349,10 @@ groupsRouter.post("/:id/leave", requireAuth, async (req, res) => {
   // owner ne leave pas (simple)
   if (member.role === "OWNER") return res.redirect(`/groups/${groupId}`);
 
-  await prisma.groupMember
-    .delete({ where: { groupId_userId: { groupId, userId: req.user.id } } })
-    .catch(() => {});
+  await query(
+    "DELETE FROM GroupMember WHERE groupId = ? AND userId = ?",
+    [groupId, req.user.id]
+  ).catch(() => {});
 
   res.redirect("/groups");
 });
@@ -251,15 +370,10 @@ groupsRouter.post("/:id/posts", requireAuth, async (req, res) => {
   const member = await getMembership(groupId, req.user.id);
   if (!member) return res.status(403).send("Forbidden");
 
-  await prisma.post.create({
-    data: {
-      content,
-      authorId: req.user.id,
-      groupId,
-      // visibility pas vraiment utilisée pour groupe, on garde PUBLIC
-      visibility: "PUBLIC"
-    }
-  });
+  await query(
+    "INSERT INTO Post (content, authorId, groupId, visibility, createdAt) VALUES (?, ?, ?, 'PUBLIC', NOW())",
+    [content, req.user.id, groupId]
+  );
 
   res.redirect(`/groups/${groupId}`);
 });
@@ -280,9 +394,10 @@ groupsRouter.post("/:id/events", requireAuth, async (req, res) => {
 
   if (!title || !startAtRaw) return res.redirect(`/groups/${groupId}`);
 
-  const member = await prisma.groupMember.findUnique({
-    where: { groupId_userId: { groupId, userId: req.user.id } }
-  });
+  const member = await queryOne(
+    "SELECT * FROM GroupMember WHERE groupId = ? AND userId = ?",
+    [groupId, req.user.id]
+  );
   if (!member) return res.status(403).send("Forbidden");
 
   const startAt = new Date(startAtRaw);
@@ -291,44 +406,28 @@ groupsRouter.post("/:id/events", requireAuth, async (req, res) => {
   if (Number.isNaN(startAt.getTime())) return res.redirect(`/groups/${groupId}`);
   if (endAt && Number.isNaN(endAt.getTime())) return res.redirect(`/groups/${groupId}`);
 
-  const ev = await prisma.event.create({
-    data: {
-      title,
-      location: location || null,
-      description: description || null,
-      startAt,
-      endAt,
-      groupId,
-      creatorId: req.user.id
-    }
-  });
+  const result = await query(
+    "INSERT INTO Event (title, location, description, startAt, endAt, groupId, creatorId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
+    [title, location || null, description || null, startAt, endAt, groupId, req.user.id]
+  );
+
+  const eventId = result.insertId;
 
   // 🔔 Notif EVENT_CREATED à tous les membres du groupe (sauf créateur)
-  const members = await prisma.groupMember.findMany({
-    where: { groupId },
-    select: { userId: true }
-  });
+  const members = await query(
+    "SELECT userId FROM GroupMember WHERE groupId = ?",
+    [groupId]
+  );
 
-  const notifData = members
-    .filter(m => m.userId !== req.user.id)
-    .map(m => ({
+  for (const m of members) {
+    if (m.userId === req.user.id) continue;
+
+    await createNotification({
       type: "EVENT_CREATED",
       toUserId: m.userId,
       fromUserId: req.user.id,
-      eventId: ev.id
-    }));
-
-  if (notifData.length > 0) {
-    for (const m of members) {
-      if (m.userId === req.user.id) continue;
-
-      await createNotification({
-        type: "EVENT_CREATED",
-        toUserId: m.userId,
-        fromUserId: req.user.id,
-        eventId: ev.id
-      });
-    }
+      eventId: eventId
+    });
   }
 
   res.redirect(`/groups/${groupId}`);
@@ -345,9 +444,7 @@ groupsRouter.get("/:id/api/events", requireAuth, async (req, res) => {
   }
 
   try {
-    const group = await prisma.group.findUnique({
-      where: { id: groupId }
-    });
+    const group = await queryOne("SELECT * FROM `Group` WHERE id = ?", [groupId]);
 
     if (!group) {
       return res.json({ error: "Group not found" });
@@ -358,22 +455,43 @@ groupsRouter.get("/:id/api/events", requireAuth, async (req, res) => {
       return res.json({ error: "Access denied" });
     }
 
-    const rawEvents = await prisma.event.findMany({
-      where: { groupId },
-      orderBy: { startAt: "asc" },
-      include: {
-        creator: { select: { id: true, displayName: true } },
-        attendees: {
-          select: { userId: true, status: true }
-        }
-      }
-    });
+    const rawEvents = await query(`
+      SELECT
+        e.*,
+        u.id as creator_id,
+        u.displayName as creator_displayName
+      FROM Event e
+      LEFT JOIN User u ON e.creatorId = u.id
+      WHERE e.groupId = ?
+      ORDER BY e.startAt ASC
+    `, [groupId]);
 
-    const events = rawEvents.map(ev => ({
-      ...ev,
-      goingCount: ev.attendees.filter(a => a.status === 'GOING').length,
-      userRsvp: ev.attendees.find(a => a.userId === req.user.id)?.status || null
-    }));
+    const eventIds = rawEvents.map(e => e.id);
+    const attendees = eventIds.length > 0 ? await query(`
+      SELECT eventId, userId, status FROM EventAttendee WHERE eventId IN (${eventIds.map(() => '?').join(',')})
+    `, eventIds) : [];
+
+    const events = rawEvents.map(ev => {
+      const evAttendees = attendees.filter(a => a.eventId === ev.id);
+      return {
+        id: ev.id,
+        title: ev.title,
+        location: ev.location,
+        description: ev.description,
+        startAt: ev.startAt,
+        endAt: ev.endAt,
+        groupId: ev.groupId,
+        creatorId: ev.creatorId,
+        createdAt: ev.createdAt,
+        creator: {
+          id: ev.creator_id,
+          displayName: ev.creator_displayName
+        },
+        attendees: evAttendees,
+        goingCount: evAttendees.filter(a => a.status === 'GOING').length,
+        userRsvp: evAttendees.find(a => a.userId === req.user.id)?.status || null
+      };
+    });
 
     res.json(events);
   } catch (error) {
@@ -393,9 +511,7 @@ groupsRouter.get("/:id/api/stats", requireAuth, async (req, res) => {
   }
 
   try {
-    const group = await prisma.group.findUnique({
-      where: { id: groupId }
-    });
+    const group = await queryOne("SELECT * FROM `Group` WHERE id = ?", [groupId]);
 
     if (!group) {
       return res.json({ error: "Group not found" });
@@ -408,20 +524,16 @@ groupsRouter.get("/:id/api/stats", requireAuth, async (req, res) => {
 
     const now = new Date();
 
-    const [totalMembers, eventCount, upcomingEvents, totalPosts] = await Promise.all([
-      prisma.groupMember.count({ where: { groupId } }),
-      prisma.event.count({ where: { groupId } }),
-      prisma.event.count({ 
-        where: { groupId, startAt: { gte: now } }
-      }),
-      prisma.groupPost.count({ where: { groupId } })
-    ]);
+    const totalMembersResult = await queryOne("SELECT COUNT(*) as count FROM GroupMember WHERE groupId = ?", [groupId]);
+    const eventCountResult = await queryOne("SELECT COUNT(*) as count FROM Event WHERE groupId = ?", [groupId]);
+    const upcomingEventsResult = await queryOne("SELECT COUNT(*) as count FROM Event WHERE groupId = ? AND startAt >= ?", [groupId, now]);
+    const totalPostsResult = await queryOne("SELECT COUNT(*) as count FROM Post WHERE groupId = ?", [groupId]);
 
     res.json({
-      totalMembers,
-      eventCount,
-      upcomingEvents,
-      totalPosts
+      totalMembers: totalMembersResult?.count || 0,
+      eventCount: eventCountResult?.count || 0,
+      upcomingEvents: upcomingEventsResult?.count || 0,
+      totalPosts: totalPostsResult?.count || 0
     });
   } catch (error) {
     console.error("Error fetching stats:", error);

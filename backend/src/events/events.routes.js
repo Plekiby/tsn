@@ -1,6 +1,6 @@
 import express from "express";
 import { requireAuth } from "../auth/auth.middleware.js";
-import { prisma } from "../prisma.js";
+import { query, queryOne } from "../db.js";
 import { createNotification } from "../notifications/notifications.service.js";
 
 export const eventsRouter = express.Router();
@@ -23,32 +23,43 @@ eventsRouter.post("/:id/rsvp", requireAuth, async (req, res) => {
 
   if (!Number.isFinite(eventId)) return res.redirect("/posts/feed");
 
-  const ev = await prisma.event.findUnique({
-    where: { id: eventId },
-    select: {
-      id: true,
-      groupId: true,
-      creatorId: true
-    }
-  });
+  const ev = await queryOne(
+    "SELECT id, groupId, creatorId FROM Event WHERE id = ?",
+    [eventId]
+  );
   if (!ev) return res.redirect("/posts/feed");
 
   // membership gate
-  const member = await prisma.groupMember.findUnique({
-    where: { groupId_userId: { groupId: ev.groupId, userId: req.user.id } }
-  });
+  const member = await queryOne(
+    "SELECT * FROM GroupMember WHERE groupId = ? AND userId = ?",
+    [ev.groupId, req.user.id]
+  );
   if (!member) return res.status(403).send("Forbidden");
 
-  await prisma.eventAttendee.upsert({
-    where: { eventId_userId: { eventId, userId: req.user.id } },
-    update: { status: safeStatus },
-    create: { eventId, userId: req.user.id, status: safeStatus }
-  });
+  // Upsert: vérifier si existe déjà
+  const existing = await queryOne(
+    "SELECT * FROM EventAttendee WHERE eventId = ? AND userId = ?",
+    [eventId, req.user.id]
+  );
+
+  if (existing) {
+    await query(
+      "UPDATE EventAttendee SET status = ? WHERE eventId = ? AND userId = ?",
+      [safeStatus, eventId, req.user.id]
+    );
+  } else {
+    await query(
+      "INSERT INTO EventAttendee (eventId, userId, status) VALUES (?, ?, ?)",
+      [eventId, req.user.id, safeStatus]
+    );
+  }
 
   // Récupérer le nombre de participants GOING
-  const goingCount = await prisma.eventAttendee.count({
-    where: { eventId, status: "GOING" }
-  });
+  const goingCountResult = await queryOne(
+    "SELECT COUNT(*) as count FROM EventAttendee WHERE eventId = ? AND status = 'GOING'",
+    [eventId]
+  );
+  const goingCount = goingCountResult ? goingCountResult.count : 0;
 
   // notif au creator (si pas lui-même)
   if (ev.creatorId !== req.user.id) {

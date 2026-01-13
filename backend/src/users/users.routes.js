@@ -1,5 +1,5 @@
 import express from "express";
-import { prisma } from "../prisma.js";
+import { query, queryOne } from "../db.js";
 import { requireAuth } from "../auth/auth.middleware.js";
 import { createNotification } from "../notifications/notifications.service.js";
 
@@ -10,10 +10,10 @@ export const usersRouter = express.Router();
  */
 usersRouter.get("/recommendations", requireAuth, async (req, res) => {
   // 1) Mes follows (1-hop)
-  const myFollows = await prisma.follow.findMany({
-    where: { followerId: req.user.id },
-    select: { followedId: true }
-  });
+  const myFollows = await query(
+    "SELECT followedId FROM Follow WHERE followerId = ?",
+    [req.user.id]
+  );
 
   const already = new Set(myFollows.map(x => x.followedId));
   already.add(req.user.id);
@@ -21,11 +21,11 @@ usersRouter.get("/recommendations", requireAuth, async (req, res) => {
   const hop1 = myFollows.map(x => x.followedId);
 
   // 2) 2-hop: follows des gens que je follow
-  const secondHop = hop1.length
-    ? await prisma.follow.findMany({
-        where: { followerId: { in: hop1 } },
-        select: { followerId: true, followedId: true }
-      })
+  const secondHop = hop1.length > 0
+    ? await query(
+        `SELECT followerId, followedId FROM Follow WHERE followerId IN (${hop1.map(() => '?').join(',')})`,
+        hop1
+      )
     : [];
 
   // 3) Mutuals: score topologique (combien de "mutuals" pointent vers cand)
@@ -51,19 +51,21 @@ usersRouter.get("/recommendations", requireAuth, async (req, res) => {
   }
 
   // 4) Intérêts du user courant
-  const myInterestsRows = await prisma.userInterest.findMany({
-    where: { userId: req.user.id },
-    select: { interestId: true, interest: { select: { name: true } } }
-  });
+  const myInterestsRows = await query(
+    "SELECT ui.interestId, i.name FROM UserInterest ui JOIN Interest i ON ui.interestId = i.id WHERE ui.userId = ?",
+    [req.user.id]
+  );
 
   const myInterestIds = new Set(myInterestsRows.map(x => x.interestId));
-  const myInterestNames = new Map(myInterestsRows.map(x => [x.interestId, x.interest.name]));
+  const myInterestNames = new Map(myInterestsRows.map(x => [x.interestId, x.name]));
 
   // 5) Intérêts des candidats (en batch)
-  const candInterestRows = await prisma.userInterest.findMany({
-    where: { userId: { in: candidates } },
-    select: { userId: true, interestId: true, interest: { select: { name: true } } }
-  });
+  const candInterestRows = candidates.length > 0
+    ? await query(
+        `SELECT ui.userId, ui.interestId, i.name FROM UserInterest ui JOIN Interest i ON ui.interestId = i.id WHERE ui.userId IN (${candidates.map(() => '?').join(',')})`,
+        candidates
+      )
+    : [];
 
   const candInterests = new Map(); // userId -> Set(interestId)
   const candCommonNames = new Map(); // userId -> string[] communs (noms)
@@ -74,25 +76,27 @@ usersRouter.get("/recommendations", requireAuth, async (req, res) => {
 
     if (myInterestIds.has(row.interestId)) {
       if (!candCommonNames.has(row.userId)) candCommonNames.set(row.userId, []);
-      candCommonNames.get(row.userId).push(row.interest.name);
+      candCommonNames.get(row.userId).push(row.name);
     }
   }
 
   // 6) Récupère displayName + mutual displayName (pour explication)
-  const users = await prisma.user.findMany({
-    where: { id: { in: candidates } },
-    select: { id: true, displayName: true, email: true }
-  });
+  const users = candidates.length > 0
+    ? await query(
+        `SELECT id, displayName, email FROM User WHERE id IN (${candidates.map(() => '?').join(',')})`,
+        candidates
+      )
+    : [];
   const userById = new Map(users.map(u => [u.id, u]));
 
   const mutualIdsAll = new Set();
   for (const s of mutualWho.values()) for (const id of s) mutualIdsAll.add(id);
 
-  const mutualUsers = mutualIdsAll.size
-    ? await prisma.user.findMany({
-        where: { id: { in: [...mutualIdsAll] } },
-        select: { id: true, displayName: true }
-      })
+  const mutualUsers = mutualIdsAll.size > 0
+    ? await query(
+        `SELECT id, displayName FROM User WHERE id IN (${[...mutualIdsAll].map(() => '?').join(',')})`,
+        [...mutualIdsAll]
+      )
     : [];
 
   const mutualNameById = new Map(mutualUsers.map(u => [u.id, u.displayName]));
@@ -155,22 +159,20 @@ usersRouter.post("/:id/follow", requireAuth, async (req, res) => {
   }
 
   try {
-    await prisma.follow.create({
-      data: { followerId: req.user.id, followedId: targetId }
-    });
+    await query(
+      "INSERT INTO Follow (followerId, followedId) VALUES (?, ?)",
+      [req.user.id, targetId]
+    );
     await createNotification({
       type: "FOLLOW",
       toUserId: targetId,
       fromUserId: req.user.id
     });
   } catch {
-    await prisma.follow
-      .delete({
-        where: {
-          followerId_followedId: { followerId: req.user.id, followedId: targetId }
-        }
-      })
-      .catch(() => {});
+    await query(
+      "DELETE FROM Follow WHERE followerId = ? AND followedId = ?",
+      [req.user.id, targetId]
+    ).catch(() => {});
   }
 
   res.redirect(back);
@@ -180,10 +182,8 @@ usersRouter.post("/:id/follow", requireAuth, async (req, res) => {
  * (Optionnel) liste simple des users pour tester le follow
  */
 usersRouter.get("/all", requireAuth, async (req, res) => {
-  const users = await prisma.user.findMany({
-    take: 50,
-    orderBy: { id: "desc" },
-    select: { id: true, displayName: true, email: true }
-  });
+  const users = await query(
+    "SELECT id, displayName, email FROM User ORDER BY id DESC LIMIT 50"
+  );
   res.render("users/all", { user: req.user, users });
 });

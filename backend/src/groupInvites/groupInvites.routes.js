@@ -1,6 +1,6 @@
 import express from "express";
 import { requireAuth } from "../auth/auth.middleware.js";
-import { prisma } from "../prisma.js";
+import { query, queryOne } from "../db.js";
 import { createNotification } from "../notifications/notifications.service.js";
 
 export const groupInvitesRouter = express.Router();
@@ -18,29 +18,29 @@ groupInvitesRouter.post("/groups/:groupId/invite/:userId", requireAuth, async (r
     return res.redirect("/groups");
   }
 
-  const membership = await prisma.groupMember.findUnique({
-    where: { groupId_userId: { groupId, userId: req.user.id } }
-  });
+  const membership = await queryOne(
+    "SELECT * FROM GroupMember WHERE groupId = ? AND userId = ?",
+    [groupId, req.user.id]
+  );
 
   if (!membership || !["OWNER", "ADMIN"].includes(membership.role)) {
     return res.status(403).send("Forbidden");
   }
 
-  await prisma.groupInvite
-    .create({
-      data: {
-        groupId,
-        fromUserId: req.user.id,
-        toUserId
-      }
-    })
-    .catch(() => {});
+  try {
+    await query(
+      "INSERT INTO GroupInvite (groupId, fromUserId, toUserId, createdAt) VALUES (?, ?, ?, NOW())",
+      [groupId, req.user.id, toUserId]
+    );
 
-  await createNotification({
-    type: "GROUP_INVITE",
-    toUserId,
-    fromUserId: req.user.id
-  });
+    await createNotification({
+      type: "GROUP_INVITE",
+      toUserId,
+      fromUserId: req.user.id
+    });
+  } catch (err) {
+    // Ignore si déjà invité
+  }
 
   res.redirect(`/groups/${groupId}`);
 });
@@ -53,26 +53,29 @@ groupInvitesRouter.post("/groups/invites/:inviteId/accept", requireAuth, async (
   const inviteId = Number(req.params.inviteId);
   if (!Number.isFinite(inviteId)) return res.redirect("/notifications");
 
-  const invite = await prisma.groupInvite.findUnique({
-    where: { id: inviteId },
-    include: { group: true }
-  });
+  const invite = await queryOne(`
+    SELECT
+      gi.*,
+      g.ownerId as group_ownerId
+    FROM GroupInvite gi
+    JOIN \`Group\` g ON gi.groupId = g.id
+    WHERE gi.id = ?
+  `, [inviteId]);
 
   if (!invite || invite.toUserId !== req.user.id) {
     return res.redirect("/notifications");
   }
 
-  await prisma.groupMember
-    .create({
-      data: { groupId: invite.groupId, userId: req.user.id, role: "MEMBER" }
-    })
-    .catch(() => {});
+  await query(
+    "INSERT INTO GroupMember (groupId, userId, role, joinedAt) VALUES (?, ?, 'MEMBER', NOW())",
+    [invite.groupId, req.user.id]
+  ).catch(() => {});
 
-  await prisma.groupInvite.delete({ where: { id: inviteId } }).catch(() => {});
+  await query("DELETE FROM GroupInvite WHERE id = ?", [inviteId]).catch(() => {});
 
   await createNotification({
     type: "GROUP_JOIN",
-    toUserId: invite.group.ownerId,
+    toUserId: invite.group_ownerId,
     fromUserId: req.user.id
   });
 
@@ -87,13 +90,13 @@ groupInvitesRouter.post("/groups/invites/:inviteId/refuse", requireAuth, async (
   const inviteId = Number(req.params.inviteId);
   if (!Number.isFinite(inviteId)) return res.redirect("/notifications");
 
-  const invite = await prisma.groupInvite.findUnique({ where: { id: inviteId } });
+  const invite = await queryOne("SELECT * FROM GroupInvite WHERE id = ?", [inviteId]);
 
   if (!invite || invite.toUserId !== req.user.id) {
     return res.redirect("/notifications");
   }
 
-  await prisma.groupInvite.delete({ where: { id: inviteId } }).catch(() => {});
+  await query("DELETE FROM GroupInvite WHERE id = ?", [inviteId]).catch(() => {});
 
   res.redirect("/notifications");
 });

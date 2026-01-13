@@ -1,7 +1,7 @@
 import express from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { prisma } from "../prisma.js";
+import { query, queryOne } from "../db.js";
 
 export const authRouter = express.Router();
 
@@ -20,13 +20,17 @@ authRouter.post("/register", async (req, res) => {
   const { email, password, displayName } = req.body || {};
   if (!email || !password || !displayName) return res.status(400).send("missing fields");
 
-  const exists = await prisma.user.findUnique({ where: { email } });
+  const exists = await queryOne("SELECT id FROM User WHERE email = ?", [email]);
   if (exists) return res.status(409).send("email already used");
 
   const passwordHash = await bcrypt.hash(password, 12);
-  const user = await prisma.user.create({ data: { email, passwordHash, displayName } });
+  const result = await query(
+    "INSERT INTO User (email, passwordHash, displayName, createdAt, updatedAt) VALUES (?, ?, ?, NOW(), NOW())",
+    [email, passwordHash, displayName]
+  );
 
-  const token = jwt.sign({ sub: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: "7d" });
+  const userId = result.insertId;
+  const token = jwt.sign({ sub: userId, email }, process.env.JWT_SECRET, { expiresIn: "7d" });
   setAuthCookie(res, token);
   res.redirect("/feed");
 });
@@ -35,7 +39,7 @@ authRouter.post("/login", async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).send("missing fields");
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await queryOne("SELECT id, email, passwordHash FROM User WHERE email = ?", [email]);
   if (!user) return res.status(401).send("bad credentials");
 
   const ok = await bcrypt.compare(password, user.passwordHash);

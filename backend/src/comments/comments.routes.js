@@ -1,6 +1,6 @@
 import express from "express";
 import { requireAuth } from "../auth/auth.middleware.js";
-import { prisma } from "../prisma.js";
+import { query, queryOne } from "../db.js";
 import { createNotification } from "../notifications/notifications.service.js";
 
 export const commentsRoutes = express.Router();
@@ -15,22 +15,22 @@ commentsRoutes.post("/posts/:postId/comments", requireAuth, async (req, res) => 
   if (content.length > 1000) return res.redirect("/posts/feed");
 
   // Même logique privacy que /posts/feed
-  const following = await prisma.follow.findMany({
-    where: { followerId: req.user.id },
-    select: { followedId: true }
-  });
+  const following = await query(
+    "SELECT followedId FROM Follow WHERE followerId = ?",
+    [req.user.id]
+  );
   const followingIds = following.map(f => f.followedId);
 
-  const friendships = await prisma.friendship.findMany({
-    where: { OR: [{ userAId: req.user.id }, { userBId: req.user.id }] },
-    select: { userAId: true, userBId: true }
-  });
+  const friendships = await query(
+    "SELECT userAId, userBId FROM Friendship WHERE userAId = ? OR userBId = ?",
+    [req.user.id, req.user.id]
+  );
   const friendIds = friendships.map(f => (f.userAId === req.user.id ? f.userBId : f.userAId));
 
-  const post = await prisma.post.findUnique({
-    where: { id: postId },
-    select: { id: true, authorId: true, visibility: true, groupId: true }
-  });
+  const post = await queryOne(
+    "SELECT id, authorId, visibility, groupId FROM Post WHERE id = ?",
+    [postId]
+  );
 
   if (!post) return res.redirect("/posts/feed");
 
@@ -44,21 +44,18 @@ commentsRoutes.post("/posts/:postId/comments", requireAuth, async (req, res) => 
 
   if (!allowed) return res.status(403).send("Forbidden");
 
-  const created = await prisma.comment.create({
-  data: {
-        content,
-        postId,
-        userId: req.user.id
-    }
-    });
+  const result = await query(
+    "INSERT INTO Comment (content, postId, userId, createdAt) VALUES (?, ?, ?, NOW())",
+    [content, postId, req.user.id]
+  );
 
-    await createNotification({
+  await createNotification({
     type: "COMMENT",
     toUserId: post.authorId,
     fromUserId: req.user.id,
     postId,
-    commentId: created.id
-    });
+    commentId: result.insertId
+  });
 
 
   // Rediriger vers le groupe si c'est un post de groupe
@@ -73,28 +70,30 @@ commentsRoutes.post("/comments/:commentId/delete", requireAuth, async (req, res)
   const commentId = Number(req.params.commentId);
   if (!Number.isFinite(commentId)) return res.redirect("/posts/feed");
 
-  const comment = await prisma.comment.findUnique({
-    where: { id: commentId },
-    select: {
-      id: true,
-      userId: true,
-      postId: true,
-      post: { select: { authorId: true, groupId: true } }
-    }
-  });
+  const comment = await queryOne(`
+    SELECT
+      c.id,
+      c.userId,
+      c.postId,
+      p.authorId as post_authorId,
+      p.groupId as post_groupId
+    FROM Comment c
+    JOIN Post p ON c.postId = p.id
+    WHERE c.id = ?
+  `, [commentId]);
 
   if (!comment) return res.redirect("/posts/feed");
 
   const isOwner = comment.userId === req.user.id;
-  const isPostOwner = comment.post.authorId === req.user.id;
+  const isPostOwner = comment.post_authorId === req.user.id;
 
   if (!isOwner && !isPostOwner) return res.status(403).send("Forbidden");
 
-  await prisma.comment.delete({ where: { id: commentId } });
-  
+  await query("DELETE FROM Comment WHERE id = ?", [commentId]);
+
   // Rediriger vers le groupe si c'est un post de groupe
-  if (comment.post.groupId) {
-    return res.redirect(`/groups/${comment.post.groupId}`);
+  if (comment.post_groupId) {
+    return res.redirect(`/groups/${comment.post_groupId}`);
   }
   return res.redirect("/posts/feed");
 });

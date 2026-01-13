@@ -1,4 +1,4 @@
-import { prisma } from "../prisma.js";
+import { queryOne } from "../db.js";
 
 export async function attachUnreadCount(req, res, next) {
   try {
@@ -8,12 +8,13 @@ export async function attachUnreadCount(req, res, next) {
       return next();
     }
 
-    const unreadCount = await prisma.notification.count({
-      where: { toUserId: req.user.id, readAt: null }
-    });
+    const result = await queryOne(
+      "SELECT COUNT(*) as count FROM Notification WHERE toUserId = ? AND readAt IS NULL",
+      [req.user.id]
+    );
 
     // accessible dans toutes les vues EJS sans passer en render()
-    res.locals.unreadCount = unreadCount;
+    res.locals.unreadCount = result ? result.count : 0;
     return next();
   } catch (e) {
     res.locals.unreadCount = 0;

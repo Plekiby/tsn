@@ -1,5 +1,5 @@
 import express from "express";
-import { prisma } from "../prisma.js";
+import { query, queryOne } from "../db.js";
 import { requireAuth } from "../auth/auth.middleware.js";
 import multer from "multer";
 import path from "path";
@@ -51,81 +51,42 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
 
   try {
     // Vérifier si l'utilisateur actuel est bloqué
-    const isBlocked = await prisma.userBlock.findUnique({
-      where: {
-        blockerId_blockedId: {
-          blockerId: userId,
-          blockedId: req.user.id
-        }
-      }
-    });
+    const isBlocked = await queryOne(
+      "SELECT * FROM UserBlock WHERE blockerId = ? AND blockedId = ?",
+      [userId, req.user.id]
+    );
 
     if (isBlocked && userId !== req.user.id) {
       return res.status(403).render("errors/404", { message: "Vous n'avez pas accès à ce profil" });
     }
 
-    const profile = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        displayName: true,
-        email: true,
-        avatar: true,
-        banner: true,
-        bio: true,
-        location: true,
-        website: true,
-        dateOfBirth: true,
-        createdAt: true,
-        _count: {
-          select: {
-            posts: true,
-            followers: true,
-            following: true
-          }
-        },
-        userInterests: {
-          select: {
-            interest: {
-              select: { name: true }
-            }
-          }
-        },
-        posts: {
-          orderBy: { createdAt: "desc" },
-          take: 10,
-          select: {
-            id: true,
-            content: true,
-            createdAt: true,
-            _count: {
-              select: {
-                comments: true,
-                likes: true
-              }
-            },
-            likes: {
-              where: { userId: req.user.id },
-              select: { userId: true }
-            }
-          }
-        },
-        privacy: {
-          select: {
-            profileVisibility: true,
-            canReceiveMessages: true
-          }
-        }
-      }
-    });
+    const profile = await queryOne(`
+      SELECT
+        u.id, u.displayName, u.email, u.avatar, u.banner, u.bio, u.location, u.website, u.dateOfBirth, u.createdAt,
+        (SELECT COUNT(*) FROM Post WHERE authorId = u.id) as postsCount,
+        (SELECT COUNT(*) FROM Follow WHERE followedId = u.id) as followersCount,
+        (SELECT COUNT(*) FROM Follow WHERE followerId = u.id) as followingCount,
+        up.profileVisibility, up.canReceiveMessages
+      FROM User u
+      LEFT JOIN UserPrivacy up ON u.id = up.userId
+      WHERE u.id = ?
+    `, [userId]);
 
     if (!profile) {
       return res.status(404).render("errors/404");
     }
 
+    // Récupérer les intérêts
+    const interests = await query(`
+      SELECT i.name
+      FROM UserInterest ui
+      JOIN Interest i ON ui.interestId = i.id
+      WHERE ui.userId = ?
+    `, [userId]);
+
     // Vérifier les permissions d'accès au profil
     const isOwnProfile = req.user.id === userId;
-    const privacy = profile.privacy?.profileVisibility || "PUBLIC";
+    const privacy = profile.profileVisibility || "PUBLIC";
     let canViewPosts = true;
     let accessRestriction = null;
 
@@ -135,14 +96,10 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
     }
 
     if (!isOwnProfile && privacy === "FOLLOWERS") {
-      const isFollowingProfile = await prisma.follow.findUnique({
-        where: {
-          followerId_followedId: {
-            followerId: req.user.id,
-            followedId: userId
-          }
-        }
-      });
+      const isFollowingProfile = await queryOne(
+        "SELECT * FROM Follow WHERE followerId = ? AND followedId = ?",
+        [req.user.id, userId]
+      );
 
       if (!isFollowingProfile) {
         canViewPosts = false;
@@ -150,49 +107,71 @@ profilesRouter.get("/:id", requireAuth, async (req, res) => {
       }
     }
 
+    // Récupérer les posts si l'utilisateur a accès
+    let posts = [];
+    if (canViewPosts) {
+      posts = await query(`
+        SELECT
+          p.id, p.content, p.createdAt,
+          (SELECT COUNT(*) FROM Comment WHERE postId = p.id) as commentsCount,
+          (SELECT COUNT(*) FROM \`Like\` WHERE postId = p.id) as likesCount,
+          (SELECT COUNT(*) FROM \`Like\` WHERE postId = p.id AND userId = ?) as userLiked
+        FROM Post p
+        WHERE p.authorId = ?
+        ORDER BY p.createdAt DESC
+        LIMIT 10
+      `, [req.user.id, userId]);
+    }
+
     // Vérifier si l'utilisateur actuel suit ce profil
-    const isFollowing = await prisma.follow.findUnique({
-      where: {
-        followerId_followedId: {
-          followerId: req.user.id,
-          followedId: userId
-        }
-      }
-    });
+    const isFollowing = await queryOne(
+      "SELECT * FROM Follow WHERE followerId = ? AND followedId = ?",
+      [req.user.id, userId]
+    );
 
     // Vérifier si utilisateur est bloqué par l'utilisateur actuel
-    const userIsBlocked = await prisma.userBlock.findUnique({
-      where: {
-        blockerId_blockedId: {
-          blockerId: req.user.id,
-          blockedId: userId
-        }
-      }
-    });
+    const userIsBlocked = await queryOne(
+      "SELECT * FROM UserBlock WHERE blockerId = ? AND blockedId = ?",
+      [req.user.id, userId]
+    );
 
     // Vérifier si utilisateur est mute par l'utilisateur actuel
-    const userIsMuted = await prisma.userMute.findUnique({
-      where: {
-        muterId_mutedId: {
-          muterId: req.user.id,
-          mutedId: userId
-        }
-      }
-    });
+    const userIsMuted = await queryOne(
+      "SELECT * FROM UserMute WHERE muterId = ? AND mutedId = ?",
+      [req.user.id, userId]
+    );
 
     res.render("users/profile", {
       user: req.user,
-      profile,
+      profile: {
+        ...profile,
+        _count: {
+          posts: profile.postsCount,
+          followers: profile.followersCount,
+          following: profile.followingCount
+        },
+        privacy: {
+          profileVisibility: profile.profileVisibility,
+          canReceiveMessages: profile.canReceiveMessages
+        }
+      },
       isFollowing: !!isFollowing,
       isOwnProfile,
-      interests: profile.userInterests.map(ui => ui.interest.name),
-      posts: canViewPosts ? profile.posts : [],
+      interests: interests.map(i => i.name),
+      posts: posts.map(p => ({
+        ...p,
+        _count: {
+          comments: p.commentsCount,
+          likes: p.likesCount
+        },
+        likes: p.userLiked ? [{ userId: req.user.id }] : []
+      })),
       isBlocked: !!userIsBlocked,
       isMuted: !!userIsMuted,
       canViewPosts,
       accessRestriction,
       profileVisibility: privacy,
-      canReceiveMessages: profile.privacy?.canReceiveMessages ?? true
+      canReceiveMessages: profile.canReceiveMessages ?? true
     });
   } catch (error) {
     console.error("Error loading profile:", error);
@@ -212,32 +191,29 @@ profilesRouter.get("/:id/edit", requireAuth, async (req, res) => {
   }
 
   try {
-    const profile = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        displayName: true,
-        email: true,
-        avatar: true,
-        banner: true,
-        bio: true,
-        location: true,
-        website: true,
-        dateOfBirth: true,
-        privacy: {
-          select: {
-            profileVisibility: true,
-            canReceiveMessages: true
-          }
-        }
-      }
-    });
+    const profile = await queryOne(`
+      SELECT
+        u.id, u.displayName, u.email, u.avatar, u.banner, u.bio, u.location, u.website, u.dateOfBirth,
+        up.profileVisibility, up.canReceiveMessages
+      FROM User u
+      LEFT JOIN UserPrivacy up ON u.id = up.userId
+      WHERE u.id = ?
+    `, [userId]);
 
     if (!profile) {
       return res.status(404).render("errors/404");
     }
 
-    res.render("users/profile-edit", { user: req.user, profile });
+    res.render("users/profile-edit", {
+      user: req.user,
+      profile: {
+        ...profile,
+        privacy: {
+          profileVisibility: profile.profileVisibility,
+          canReceiveMessages: profile.canReceiveMessages
+        }
+      }
+    });
   } catch (error) {
     console.error("Error loading profile edit:", error);
     res.status(500).render("errors/500");
@@ -265,48 +241,82 @@ profilesRouter.post(
     try {
       const { displayName, bio, location, website, dateOfBirth, profileVisibility, canReceiveMessages } = req.body;
 
-      const updateData = {
-        displayName: displayName?.trim() || undefined,
-        bio: bio?.trim() || null,
-        location: location?.trim() || null,
-        website: website?.trim() || null
-      };
+      const updates = [];
+      const values = [];
+
+      if (displayName?.trim()) {
+        updates.push("displayName = ?");
+        values.push(displayName.trim());
+      }
+
+      if (bio !== undefined) {
+        updates.push("bio = ?");
+        values.push(bio?.trim() || null);
+      }
+
+      if (location !== undefined) {
+        updates.push("location = ?");
+        values.push(location?.trim() || null);
+      }
+
+      if (website !== undefined) {
+        updates.push("website = ?");
+        values.push(website?.trim() || null);
+      }
 
       // Gérer la date de naissance
       if (dateOfBirth && dateOfBirth.trim()) {
-        updateData.dateOfBirth = new Date(dateOfBirth);
+        updates.push("dateOfBirth = ?");
+        values.push(new Date(dateOfBirth));
       }
 
       // Gérer l'avatar uploadé
       if (req.files?.avatar && req.files.avatar[0]) {
-        updateData.avatar = "/public/uploads/" + req.files.avatar[0].filename;
+        updates.push("avatar = ?");
+        values.push("/public/uploads/" + req.files.avatar[0].filename);
       }
 
       // Gérer la banner uploadée
       if (req.files?.banner && req.files.banner[0]) {
-        updateData.banner = "/public/uploads/" + req.files.banner[0].filename;
+        updates.push("banner = ?");
+        values.push("/public/uploads/" + req.files.banner[0].filename);
       }
 
-      // Mettre à jour le profil
-      await prisma.user.update({
-        where: { id: userId },
-        data: updateData
-      });
+      if (updates.length > 0) {
+        updates.push("updatedAt = NOW()");
+        values.push(userId);
+        await query(
+          `UPDATE User SET ${updates.join(", ")} WHERE id = ?`,
+          values
+        );
+      }
 
       // Mettre à jour les paramètres de confidentialité
       if (profileVisibility || canReceiveMessages !== undefined) {
-        await prisma.userPrivacy.upsert({
-          where: { userId },
-          update: {
-            profileVisibility: profileVisibility || undefined,
-            canReceiveMessages: canReceiveMessages === 'true' || canReceiveMessages === true
-          },
-          create: {
-            userId,
-            profileVisibility: profileVisibility || 'PUBLIC',
-            canReceiveMessages: canReceiveMessages === 'true' || canReceiveMessages === true
-          }
-        });
+        const existingPrivacy = await queryOne(
+          "SELECT * FROM UserPrivacy WHERE userId = ?",
+          [userId]
+        );
+
+        if (existingPrivacy) {
+          await query(
+            "UPDATE UserPrivacy SET profileVisibility = ?, canReceiveMessages = ? WHERE userId = ?",
+            [
+              profileVisibility || existingPrivacy.profileVisibility,
+              canReceiveMessages === 'true' || canReceiveMessages === true,
+              userId
+            ]
+          );
+        } else {
+          await query(
+            "INSERT INTO UserPrivacy (userId, profileVisibility, canReceiveMessages) VALUES (?, ?, ?)",
+            [
+              userId,
+              profileVisibility || 'PUBLIC',
+              canReceiveMessages === 'true' || canReceiveMessages === true
+            ]
+          );
+        }
       }
 
       res.redirect(`/profiles/${userId}`);

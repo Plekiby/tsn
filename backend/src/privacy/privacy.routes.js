@@ -1,5 +1,5 @@
 import express from "express";
-import { prisma } from "../prisma.js";
+import { query, queryOne } from "../db.js";
 import { requireAuth } from "../auth/auth.middleware.js";
 
 export const privacyRouter = express.Router();
@@ -16,12 +16,10 @@ privacyRouter.post("/block/:id", requireAuth, async (req, res) => {
   }
 
   try {
-    await prisma.userBlock.create({
-      data: {
-        blockerId: req.user.id,
-        blockedId: targetId
-      }
-    }).catch(() => null); // Ignore si déjà bloqué
+    await query(
+      "INSERT INTO UserBlock (blockerId, blockedId) VALUES (?, ?)",
+      [req.user.id, targetId]
+    ).catch(() => null); // Ignore si déjà bloqué
 
     res.redirect(back);
   } catch (error) {
@@ -42,14 +40,10 @@ privacyRouter.post("/unblock/:id", requireAuth, async (req, res) => {
   }
 
   try {
-    await prisma.userBlock.delete({
-      where: {
-        blockerId_blockedId: {
-          blockerId: req.user.id,
-          blockedId: targetId
-        }
-      }
-    }).catch(() => null);
+    await query(
+      "DELETE FROM UserBlock WHERE blockerId = ? AND blockedId = ?",
+      [req.user.id, targetId]
+    ).catch(() => null);
 
     res.redirect(back);
   } catch (error) {
@@ -70,12 +64,10 @@ privacyRouter.post("/mute/:id", requireAuth, async (req, res) => {
   }
 
   try {
-    await prisma.userMute.create({
-      data: {
-        muterId: req.user.id,
-        mutedId: targetId
-      }
-    }).catch(() => null);
+    await query(
+      "INSERT INTO UserMute (muterId, mutedId) VALUES (?, ?)",
+      [req.user.id, targetId]
+    ).catch(() => null);
 
     res.redirect(back);
   } catch (error) {
@@ -96,14 +88,10 @@ privacyRouter.post("/unmute/:id", requireAuth, async (req, res) => {
   }
 
   try {
-    await prisma.userMute.delete({
-      where: {
-        muterId_mutedId: {
-          muterId: req.user.id,
-          mutedId: targetId
-        }
-      }
-    }).catch(() => null);
+    await query(
+      "DELETE FROM UserMute WHERE muterId = ? AND mutedId = ?",
+      [req.user.id, targetId]
+    ).catch(() => null);
 
     res.redirect(back);
   } catch (error) {
@@ -119,18 +107,23 @@ privacyRouter.post("/profile-settings", requireAuth, async (req, res) => {
   const { profileVisibility, canReceiveMessages } = req.body;
 
   try {
-    const privacy = await prisma.userPrivacy.upsert({
-      where: { userId: req.user.id },
-      update: {
-        profileVisibility: profileVisibility || "PUBLIC",
-        canReceiveMessages: canReceiveMessages === "on"
-      },
-      create: {
-        userId: req.user.id,
-        profileVisibility: profileVisibility || "PUBLIC",
-        canReceiveMessages: canReceiveMessages === "on"
-      }
-    });
+    // Vérifier si un enregistrement existe déjà
+    const existing = await queryOne(
+      "SELECT * FROM UserPrivacy WHERE userId = ?",
+      [req.user.id]
+    );
+
+    if (existing) {
+      await query(
+        "UPDATE UserPrivacy SET profileVisibility = ?, canReceiveMessages = ? WHERE userId = ?",
+        [profileVisibility || "PUBLIC", canReceiveMessages === "on", req.user.id]
+      );
+    } else {
+      await query(
+        "INSERT INTO UserPrivacy (userId, profileVisibility, canReceiveMessages) VALUES (?, ?, ?)",
+        [req.user.id, profileVisibility || "PUBLIC", canReceiveMessages === "on"]
+      );
+    }
 
     res.redirect(`/profiles/${req.user.id}/edit`);
   } catch (error) {

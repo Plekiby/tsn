@@ -1,4 +1,4 @@
-import { prisma } from "../prisma.js";
+import { query } from "../db.js";
 
 export async function attachUnreadMessages(req, res, next) {
   if (!req.user?.id) {
@@ -7,27 +7,18 @@ export async function attachUnreadMessages(req, res, next) {
   }
 
   try {
-    const members = await prisma.conversationMember.findMany({
-      where: { userId: req.user.id },
-      include: {
-        conversation: {
-          include: {
-            messages: {
-              where: {
-                senderId: { not: req.user.id }
-              },
-              orderBy: { createdAt: "desc" },
-              take: 1
-            }
-          }
-        }
-      }
-    });
+    const members = await query(`
+      SELECT
+        cm.conversationId,
+        cm.lastReadAt,
+        (SELECT createdAt FROM Message WHERE conversationId = cm.conversationId AND senderId != ? ORDER BY createdAt DESC LIMIT 1) as lastMsgCreatedAt
+      FROM ConversationMember cm
+      WHERE cm.userId = ?
+    `, [req.user.id, req.user.id]);
 
     let total = 0;
     for (const member of members) {
-      const lastMsg = member.conversation.messages[0];
-      if (lastMsg && (!member.lastReadAt || lastMsg.createdAt > member.lastReadAt)) {
+      if (member.lastMsgCreatedAt && (!member.lastReadAt || new Date(member.lastMsgCreatedAt) > new Date(member.lastReadAt))) {
         total++;
       }
     }
