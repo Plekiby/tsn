@@ -156,17 +156,20 @@
         <strong class="me-auto">Notification</strong>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
       </div>
-      <div class="toast-body" style="cursor:pointer;">
+      <div class="toast-body" style="cursor:pointer; word-break:break-word; white-space:normal;">
         ${escapeHtml(message)}
       </div>
     `;
+
+    toastEl.style.minWidth = "auto";
+    toastEl.style.maxWidth = "100%";
 
     toastEl.querySelector(".toast-body").addEventListener("click", () => {
       try { onClick?.(); } catch (_) {}
     });
 
     container.appendChild(toastEl);
-    const bsToast = new bootstrap.Toast(toastEl, { autohide: true, delay: 4500 });
+    const bsToast = new bootstrap.Toast(toastEl, { autohide: true, delay: 5000 });
     bsToast.show();
 
     toastEl.addEventListener("hidden.bs.toast", () => toastEl.remove());

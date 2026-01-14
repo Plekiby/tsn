@@ -32,8 +32,34 @@
 </div>
 <!-- Toast container -->
 <div id="toastContainer"
-     style="position:fixed; right:16px; bottom:16px; z-index:9999; display:flex; flex-direction:column; gap:10px;">
+     style="position:fixed; right:8px; bottom:8px; z-index:9999; display:flex; flex-direction:column; gap:8px; max-width:calc(100vw - 16px); width:90vw; max-width:400px;">
 </div>
+
+<style>
+  @media (max-width: 768px) {
+    #toastContainer {
+      right: 8px !important;
+      bottom: 8px !important;
+      width: 95vw !important;
+      max-width: 100% !important;
+    }
+    
+    #toastContainer .toast {
+      max-width: 100%;
+      min-width: auto;
+    }
+    
+    #toastContainer .toast-body {
+      font-size: 14px;
+      padding: 12px;
+    }
+    
+    #toastContainer .toast-header {
+      font-size: 13px;
+      padding: 8px 12px;
+    }
+  }
+</style>
 
 <script>
 (function () {
