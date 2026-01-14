@@ -6,17 +6,18 @@ import { creerNotification } from "../notifications/notifications.service.js";
 export const routesUtilisateurs = express.Router();
 
 //////////
-// Récupère les recommandations FOAF (amis d'amis)
-// Utilise un système de scoring basé sur:
-// - Connexions simples (10 pts), mutuelles (20 pts)
-// - Intérêts communs (3 pts par intérêt)
-// - Jaccard similarity (jusqu'à 20 pts bonus)
-// Retourne: liste triée de 20 candidats recommandés
+// Récupère les recommandations basées sur:
+// - FOAF (Friends Of A Friend): gens suivis par ceux que je suis
+// - Intérêts communs: pour les nouveaux utilisateurs
+// Scoring:
+// - Comptes de 1-hop (Follow) = 10 pts par personne en commun
+// - Intérêts communs = 8 pts par intérêt
+// - Bonus Jaccard = 30 pts max
 //////////
 routesUtilisateurs.get("/recommendations", exigerAuthentification, async (requete, reponse) => {
   const idUtilisateur = requete.user.id;
 
-  // 1) Récupérer mes abonnements (1-hop)
+  // 1) Récupérer ceux que JE suis (1-hop)
   const mesAbonnementsData = await query(
     "SELECT followedId FROM Follow WHERE followerId = ?",
     [idUtilisateur]
@@ -24,159 +25,266 @@ routesUtilisateurs.get("/recommendations", exigerAuthentification, async (requet
 
   const deja = new Set(mesAbonnementsData.map(x => x.followedId));
   deja.add(idUtilisateur);
-  const sautUn = mesAbonnementsData.map(x => x.followedId);
+  const ceuxQuejeSuis = mesAbonnementsData.map(x => x.followedId);
 
-  // 2) 2-hop: abonnements des gens que je suis
-  const sautDeux = sautUn.length > 0
+  // 2) 2-hop: ceux qui sont suivis par ceux que je suis
+  const sautDeux = ceuxQuejeSuis.length > 0
     ? await query(
-        `SELECT followerId, followedId FROM Follow WHERE followerId IN (${sautUn.map(() => '?').join(',')})`,
-        sautUn
+        `SELECT followerId, followedId FROM Follow WHERE followerId IN (${ceuxQuejeSuis.map(() => '?').join(',')})`,
+        ceuxQuejeSuis
       )
     : [];
 
-  // 3) Construire les statistiques et détecter les connexions bidirectionnelles
-  const comptageConnexions = new Map();
-  const quiEstConnecte = new Map();
-  const comptageAmisCommuns = new Map();
-
-  for (const areteRelation of sautDeux) {
-    const personneMutuele = areteRelation.followerId;
-    const candidat = areteRelation.followedId;
-
+  // 3) Compter les "comptes en commun" = nombre de gens que je suis qui suivent le candidat
+  // + détecter si ces comptes en commun sont MUTUELS avec le candidat
+  const comptageComptesEnCommun = new Map();
+  const comptageComptesEnCommunMutuels = new Map();
+  const personnesEnCommun = new Map(); // Pour chaque candidat, liste des gens que je suis qui le suivent
+  const personnesMutuelles = new Map(); // Pour chaque candidat, liste des MUTUELS seulement
+  
+  for (const row of sautDeux) {
+    const candidat = row.followedId;
+    const suiveur = row.followerId; // La personne qui suit le candidat
     if (deja.has(candidat)) continue;
+    comptageComptesEnCommun.set(candidat, (comptageComptesEnCommun.get(candidat) || 0) + 1);
+    
+    if (!personnesEnCommun.has(candidat)) {
+      personnesEnCommun.set(candidat, []);
+    }
+    personnesEnCommun.get(candidat).push(suiveur);
+  }
 
-    comptageConnexions.set(candidat, (comptageConnexions.get(candidat) || 0) + 1);
-
-    if (!quiEstConnecte.has(candidat)) quiEstConnecte.set(candidat, new Set());
-
-    const estMutuel = await queryOne(
-      "SELECT * FROM Follow WHERE followerId = ? AND followedId = ?",
-      [personneMutuele, candidat]
-    ).then(resultat => {
-      if (resultat) {
-        return queryOne(
-          "SELECT * FROM Follow WHERE followerId = ? AND followedId = ?",
-          [candidat, personneMutuele]
-        );
+  // Vérifier lesquels sont MUTUELS (bidirectionnels)
+  for (const [candidat, personnes] of personnesEnCommun) {
+    personnesMutuelles.set(candidat, []);
+    for (const personne of personnes) {
+      const existeMutuel = await queryOne(
+        "SELECT * FROM Follow WHERE followerId = ? AND followedId = ?",
+        [candidat, personne]
+      );
+      if (existeMutuel) {
+        comptageComptesEnCommunMutuels.set(candidat, (comptageComptesEnCommunMutuels.get(candidat) || 0) + 1);
+        personnesMutuelles.get(candidat).push(personne); // Ajouter à la liste des mutuels
       }
-      return null;
-    });
-
-    quiEstConnecte.get(candidat).add({ id: personneMutuele, estMutuel: !!estMutuel });
-
-    if (estMutuel) {
-      comptageAmisCommuns.set(candidat, (comptageAmisCommuns.get(candidat) || 0) + 1);
     }
   }
 
-  const candidats = [...comptageConnexions.keys()];
+  const candidats = [...comptageComptesEnCommun.keys()];
+  
+  // Si pas de candidats FOAF, chercher par intérêts communs
+  let recommendationsFinales = [];
+  
   if (candidats.length === 0) {
-    return reponse.render("users/recommendations", { user: requete.user, reco: [] });
+    const mesInterets = await query(
+      "SELECT ui.interestId, i.name FROM UserInterest ui JOIN Interest i ON ui.interestId = i.id WHERE ui.userId = ?",
+      [idUtilisateur]
+    );
+    
+    if (mesInterets.length === 0) {
+      return reponse.render("users/recommendations", { user: requete.user, reco: [] });
+    }
+    
+    const idsIntereits = mesInterets.map(x => x.interestId);
+    
+    // Trouver ceux qui partagent au moins 1 intérêt
+    const utilisateursSimilaires = await query(
+      `SELECT ui.userId, COUNT(*) as nbInteretsCommuns
+       FROM UserInterest ui
+       WHERE ui.interestId IN (${idsIntereits.map(() => '?').join(',')})
+         AND ui.userId NOT IN (?)
+       GROUP BY ui.userId
+       ORDER BY nbInteretsCommuns DESC
+       LIMIT 20`,
+      [...idsIntereits, idUtilisateur]
+    );
+    
+    if (utilisateursSimilaires.length === 0) {
+      return reponse.render("users/recommendations", { user: requete.user, reco: [] });
+    }
+
+    const idsUtilisateurs = utilisateursSimilaires.map(u => u.userId);
+    
+    // Infos + intérêts
+    const infos = await query(
+      `SELECT id, displayName, email, bio FROM User WHERE id IN (${idsUtilisateurs.map(() => '?').join(',')})`,
+      idsUtilisateurs
+    );
+    
+    const interets = await query(
+      `SELECT ui.userId, ui.interestId, i.name FROM UserInterest ui JOIN Interest i ON ui.interestId = i.id WHERE ui.userId IN (${idsUtilisateurs.map(() => '?').join(',')})`,
+      idsUtilisateurs
+    );
+    
+    const ensembleIntereitsParUtilisateur = new Map();
+    const interetsCommuns = new Map();
+    
+    for (const row of interets) {
+      if (!ensembleIntereitsParUtilisateur.has(row.userId)) {
+        ensembleIntereitsParUtilisateur.set(row.userId, new Set());
+      }
+      ensembleIntereitsParUtilisateur.get(row.userId).add(row.interestId);
+      
+      if (idsIntereits.includes(row.interestId)) {
+        if (!interetsCommuns.has(row.userId)) interetsCommuns.set(row.userId, []);
+        interetsCommuns.get(row.userId).push(row.name);
+      }
+    }
+    
+    const idsIntereitsSet = new Set(idsIntereits);
+    function jaccard(ensA, ensB) {
+      if (ensA.size === 0 && ensB.size === 0) return 0;
+      let intersection = 0;
+      for (const x of ensA) if (ensB.has(x)) intersection++;
+      const union = ensA.size + ensB.size - intersection;
+      return union === 0 ? 0 : intersection / union;
+    }
+    
+    const infoMap = new Map(infos.map(u => [u.id, u]));
+    
+    recommendationsFinales = idsUtilisateurs
+      .map(id => {
+        const communs = interetsCommuns.get(id) || [];
+        const ensInteret = ensembleIntereitsParUtilisateur.get(id) || new Set();
+        const scoreJaccard = jaccard(idsIntereitsSet, ensInteret);
+        const score = communs.length * 8 + scoreJaccard * 30;
+        
+        return {
+          id,
+          displayName: infoMap.get(id)?.displayName || `User#${id}`,
+          email: infoMap.get(id)?.email || "",
+          bio: infoMap.get(id)?.bio || null,
+          score: Number(score.toFixed(1)),
+          nbConnexions: 0,
+          nbConnexionsMutuelles: 0,
+          nomsAmisCommunsAffichage: [],
+          scoreJaccard: Number(scoreJaccard.toFixed(3)),
+          interetsCommuns: communs,
+          nbInteretsCommuns: communs.length,
+          pourcentageInterets: idsIntereits.length > 0
+            ? Math.round((communs.length / idsIntereits.length) * 100)
+            : 0
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+    
+    return reponse.render("users/recommendations", { user: requete.user, reco: recommendationsFinales });
   }
 
   // 4) Récupérer mes intérêts
-  const mesInteretsData = await query(
+  const mesInterets = await query(
     "SELECT ui.interestId, i.name FROM UserInterest ui JOIN Interest i ON ui.interestId = i.id WHERE ui.userId = ?",
     [idUtilisateur]
   );
-  const idsIntereits = new Set(mesInteretsData.map(x => x.interestId));
+  const idsIntereitsSet = new Set(mesInterets.map(x => x.interestId));
 
-  // 5) Intérêts des candidats (par batch)
-  const interetsCandidat = candidats.length > 0
+  // 5) Intérêts des candidats
+  const interetsData = candidats.length > 0
     ? await query(
         `SELECT ui.userId, ui.interestId, i.name FROM UserInterest ui JOIN Interest i ON ui.interestId = i.id WHERE ui.userId IN (${candidats.map(() => '?').join(',')})`,
         candidats
       )
     : [];
 
-  const ensembleInteretsCandidats = new Map();
+  const ensembleIntereits = new Map();
   const nomsInteretsCommuns = new Map();
 
-  for (const ligne of interetsCandidat) {
-    if (!ensembleInteretsCandidats.has(ligne.userId)) ensembleInteretsCandidats.set(ligne.userId, new Set());
-    ensembleInteretsCandidats.get(ligne.userId).add(ligne.interestId);
+  for (const row of interetsData) {
+    if (!ensembleIntereits.has(row.userId)) ensembleIntereits.set(row.userId, new Set());
+    ensembleIntereits.get(row.userId).add(row.interestId);
 
-    if (idsIntereits.has(ligne.interestId)) {
-      if (!nomsInteretsCommuns.has(ligne.userId)) nomsInteretsCommuns.set(ligne.userId, []);
-      nomsInteretsCommuns.get(ligne.userId).push(ligne.name);
+    if (idsIntereitsSet.has(row.interestId)) {
+      if (!nomsInteretsCommuns.has(row.userId)) nomsInteretsCommuns.set(row.userId, []);
+      nomsInteretsCommuns.get(row.userId).push(row.name);
     }
   }
 
-  // 6) Récupérer les infos utilisateurs
+  // 6) Récupérer les noms des gens en commun
+  const tousLesGensEnCommun = new Set();
+  for (const personnes of personnesEnCommun.values()) {
+    for (const personne of personnes) {
+      tousLesGensEnCommun.add(personne);
+    }
+  }
+  
+  const infosGensEnCommun = tousLesGensEnCommun.size > 0
+    ? await query(
+        `SELECT id, displayName FROM User WHERE id IN (${[...tousLesGensEnCommun].map(() => '?').join(',')})`,
+        [...tousLesGensEnCommun]
+      )
+    : [];
+  const nomParId = new Map(infosGensEnCommun.map(u => [u.id, u.displayName]));
+
+  // 7) Infos des candidats
   const utilisateurs = candidats.length > 0
     ? await query(
         `SELECT id, displayName, email, bio FROM User WHERE id IN (${candidats.map(() => '?').join(',')})`,
         candidats
       )
     : [];
-  const utilisateurParId = new Map(utilisateurs.map(u => [u.id, u]));
+  const utilisateurMap = new Map(utilisateurs.map(u => [u.id, u]));
 
-  const idsAmisCommunsTotal = new Set();
-  for (const ensemble of quiEstConnecte.values()) {
-    for (const obj of ensemble) idsAmisCommunsTotal.add(obj.id);
-  }
-
-  const utilisateursAmisCommuns = idsAmisCommunsTotal.size > 0
-    ? await query(
-        `SELECT id, displayName FROM User WHERE id IN (${[...idsAmisCommunsTotal].map(() => '?').join(',')})`,
-        [...idsAmisCommunsTotal]
-      )
-    : [];
-  const nomAmiCommunParId = new Map(utilisateursAmisCommuns.map(u => [u.id, u.displayName]));
-
-  // 7) Calculer le score avec similarité Jaccard
-  function similariteJaccard(ensembleA, ensembleB) {
-    if (ensembleA.size === 0 && ensembleB.size === 0) return 0;
+  // 8) Jaccard similarity
+  function jaccard(ensA, ensB) {
+    if (ensA.size === 0 && ensB.size === 0) return 0;
     let intersection = 0;
-    for (const x of ensembleA) if (ensembleB.has(x)) intersection++;
-    const union = ensembleA.size + ensembleB.size - intersection;
+    for (const x of ensA) if (ensB.has(x)) intersection++;
+    const union = ensA.size + ensB.size - intersection;
     return union === 0 ? 0 : intersection / union;
   }
 
-  const recommendations = candidats
-    .map((idCandidat) => {
-      const candidatData = utilisateurParId.get(idCandidat);
-      const nbConnexions = comptageConnexions.get(idCandidat) || 0;
-      const nbConnexionsMutuelles = comptageAmisCommuns.get(idCandidat) || 0;
+  recommendationsFinales = candidats
+    .map((id) => {
+      const nbComptesEnCommun = comptageComptesEnCommun.get(id) || 0;
+      const nbComptesEnCommunMutuels = comptageComptesEnCommunMutuels.get(id) || 0;
+      const nbComptesSimples = nbComptesEnCommun - nbComptesEnCommunMutuels;
+      const communs = nomsInteretsCommuns.get(id) || [];
+      const nbCommunsInterets = communs.length;
+      const ensInteret = ensembleIntereits.get(id) || new Set();
+      const scoreJaccard = jaccard(idsIntereitsSet, ensInteret);
 
-      const ensembleInterets = ensembleInteretsCandidats.get(idCandidat) || new Set();
-      const scoreJaccard = similariteJaccard(idsIntereits, ensembleInterets);
-
-      const interetsCommuns = nomsInteretsCommuns.get(idCandidat) || [];
-      const nbInteretsCommuns = interetsCommuns.length;
-
-      const amisCommunsObjs = quiEstConnecte.has(idCandidat) ? [...quiEstConnecte.get(idCandidat)] : [];
-      const nomsAmisCommunsAffichage = amisCommunsObjs.map(obj => {
-        const nom = nomAmiCommunParId.get(obj.id) || `#${obj.id}`;
-        return obj.estMutuel ? `${nom} (mutuel)` : nom;
+      // Récupérer les noms des gens en commun
+      const gensEnCommunPourCeCandidat = personnesEnCommun.get(id) || [];
+      const mutuelsForId = personnesMutuelles.get(id) || [];
+      const nomsAmisCommunsAffichage = gensEnCommunPourCeCandidat.map(idPersonne => {
+        const nom = nomParId.get(idPersonne) || `#${idPersonne}`;
+        // Vérifier si cette personne SPÉCIFIQUE est mutuelle
+        const isMutuel = mutuelsForId.includes(idPersonne);
+        return isMutuel ? `${nom} ✓` : nom;
       });
 
-      const scoreConnexions = (nbConnexions - nbConnexionsMutuelles) * 10 + nbConnexionsMutuelles * 20;
-      const scoreInterets = nbInteretsCommuns * 3;
-      const bonusJaccard = scoreJaccard * 20;
-      const scoreTotal = scoreConnexions + scoreInterets + bonusJaccard;
+      // SCORING:
+      // - 10 pts par compte en commun simple
+      // - 15 pts par compte en commun MUTUEL (bonus de 5 pts)
+      // - 8 pts par intérêt commun
+      // - 30 pts max de bonus Jaccard
+      const scoreComptesSimples = nbComptesSimples * 10;
+      const scoreComptesMutuels = nbComptesEnCommunMutuels * 15;
+      const scoreComptes = scoreComptesSimples + scoreComptesMutuels;
+      const scoreInterets = nbCommunsInterets * 8;
+      const bonusJaccard = scoreJaccard * 30;
+      const scoreTotal = scoreComptes + scoreInterets + bonusJaccard;
 
       return {
-        id: idCandidat,
-        displayName: candidatData?.displayName || `User#${idCandidat}`,
-        email: candidatData?.email || "",
-        bio: candidatData?.bio || null,
+        id,
+        displayName: utilisateurMap.get(id)?.displayName || `User#${id}`,
+        email: utilisateurMap.get(id)?.email || "",
+        bio: utilisateurMap.get(id)?.bio || null,
         score: Number(scoreTotal.toFixed(1)),
-        nbConnexions,
-        nbConnexionsMutuelles,
+        nbConnexions: nbComptesEnCommun,
+        nbConnexionsMutuelles: nbComptesEnCommunMutuels,
         nomsAmisCommunsAffichage,
         scoreJaccard: Number(scoreJaccard.toFixed(3)),
-        interetsCommuns,
-        nbInteretsCommuns,
-        pourcentageInterets: idsIntereits.size > 0
-          ? Math.round((nbInteretsCommuns / idsIntereits.size) * 100)
+        interetsCommuns: communs,
+        nbInteretsCommuns: nbCommunsInterets,
+        pourcentageInterets: idsIntereitsSet.size > 0
+          ? Math.round((nbCommunsInterets / idsIntereitsSet.size) * 100)
           : 0
       };
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 20);
 
-  reponse.render("users/recommendations", { user: requete.user, reco: recommendations });
+  reponse.render("users/recommendations", { user: requete.user, reco: recommendationsFinales });
 });
 
 //////////

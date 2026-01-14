@@ -3,6 +3,7 @@ import { exigerAuthentification } from "../auth/auth.middleware.js";
 import { query, queryOne } from "../db.js";
 import { creerNotification } from "../notifications/notifications.service.js";
 import { obtenirCompteurNotifications } from "../notifications/notifications.service.js";
+import { upload } from "../config/upload.js";
 
 export const routesPosts = express.Router();
 
@@ -109,7 +110,13 @@ routesPosts.get("/feed", exigerAuthentification, async (requete, reponse) => {
   // 6) Récupérer tous les posts visibles
   const donneesPublications = await query(`
     SELECT
-      p.*,
+      p.id,
+      p.content,
+      p.imageUrl,
+      p.createdAt,
+      p.authorId,
+      p.visibility,
+      p.groupId,
       u.id as author_id,
       u.displayName as author_displayName,
       g.id as group_id,
@@ -145,6 +152,7 @@ routesPosts.get("/feed", exigerAuthentification, async (requete, reponse) => {
   const publicationsBrutes = donneesPublications.map(p => ({
     id: p.id,
     content: p.content,
+    imageUrl: p.imageUrl,
     visibility: p.visibility,
     authorId: p.authorId,
     groupId: p.group_id,
@@ -262,11 +270,12 @@ routesPosts.get("/feed", exigerAuthentification, async (requete, reponse) => {
 });
 
 //////////
-// Crée un nouveau post avec visibility
+// Crée un nouveau post avec visibility et image optionnelle
 // Filtre et valide le contenu et la visibilité
+// Upload l'image si fournie
 // Retourne: redirect /posts/feed
 //////////
-routesPosts.post("/", exigerAuthentification, async (requete, reponse) => {
+routesPosts.post("/", exigerAuthentification, upload.single('image'), async (requete, reponse) => {
   const contenu = (requete.body?.content || "").trim();
   const visibilite = (requete.body?.visibility || "PUBLIC").toUpperCase();
 
@@ -275,9 +284,15 @@ routesPosts.post("/", exigerAuthentification, async (requete, reponse) => {
 
   if (!contenu) return reponse.redirect("/posts/feed");
 
+  // Construire l'URL de l'image si une image a été uploadée
+  let imageUrl = null;
+  if (requete.file) {
+    imageUrl = `/uploads/${requete.file.filename}`;
+  }
+
   await query(
-    "INSERT INTO Post (content, visibility, authorId, createdAt) VALUES (?, ?, ?, NOW())",
-    [contenu, visibiliteSure, requete.user.id]
+    "INSERT INTO Post (content, imageUrl, visibility, authorId, createdAt) VALUES (?, ?, ?, ?, NOW())",
+    [contenu, imageUrl, visibiliteSure, requete.user.id]
   );
 
   reponse.redirect("/posts/feed");

@@ -8,8 +8,17 @@
       <div class="card mb-4 shadow-sm">
         <div class="card-body">
           <h5 class="card-title"><i class="bi bi-pencil-square text-primary"></i> Nouveau post</h5>
-          <form method="POST" action="/posts">
+          <form method="POST" action="/posts" enctype="multipart/form-data" id="postForm">
             <textarea name="content" class="form-control mb-3" rows="3" placeholder="Quoi de neuf ?" required></textarea>
+            
+            <!-- Aperçu image -->
+            <div id="imagePreview" style="display: none; margin-bottom: 15px;">
+              <img id="previewImg" src="" alt="Aperçu" style="max-width: 300px; max-height: 300px; border-radius: 8px; object-fit: cover;">
+              <button type="button" class="btn btn-sm btn-danger ms-2" id="removeImageBtn" onclick="removeImage()">
+                <i class="bi bi-x-circle"></i> Supprimer
+              </button>
+            </div>
+
             <div class="row">
               <div class="col-md-6 mb-2">
                 <select name="visibility" class="form-select form-select-sm">
@@ -19,15 +28,66 @@
                   <option value="PRIVATE">🔒 Privé</option>
                 </select>
               </div>
-              <div class="col-md-6">
-                <button type="submit" class="btn btn-primary w-100">
-                  <i class="bi bi-send"></i> Publier
-                </button>
+              <div class="col-md-6 mb-2">
+                <label for="imageInput" class="btn btn-secondary btn-sm w-100">
+                  <i class="bi bi-image"></i> Ajouter une photo
+                  <input type="file" id="imageInput" name="image" accept="image/*" class="d-none">
+                </label>
               </div>
             </div>
+
+            <button type="submit" class="btn btn-primary w-100">
+              <i class="bi bi-send"></i> Publier
+            </button>
           </form>
         </div>
       </div>
+
+      <style>
+        #imageInput {
+          display: none;
+        }
+      </style>
+
+      <script>
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const previewImg = document.getElementById('previewImg');
+
+        imageInput.addEventListener('change', function(e) {
+          const file = e.target.files[0];
+          
+          if (file) {
+            // Vérifier le type d'image
+            if (!file.type.startsWith('image/')) {
+              alert('Veuillez sélectionner une image');
+              imageInput.value = '';
+              return;
+            }
+
+            // Vérifier la taille (5MB max)
+            if (file.size > 5 * 1024 * 1024) {
+              alert('Le fichier ne doit pas dépasser 5 MB');
+              imageInput.value = '';
+              return;
+            }
+
+            // Afficher l'aperçu
+            const reader = new FileReader();
+            reader.onload = function(event) {
+              previewImg.src = event.target.result;
+              imagePreview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+          }
+        });
+
+        function removeImage() {
+          imageInput.value = '';
+          imagePreview.style.display = 'none';
+          previewImg.src = '';
+        }
+      </script>
 
       <% if (!posts || posts.length === 0) { %>
         <div class="alert alert-info"><i class="bi bi-info-circle"></i> Aucun post.</div>
@@ -62,6 +122,11 @@
 
             <!-- Contenu -->
             <p class="mb-3"><%= p.content %></p>
+
+            <!-- Image du post -->
+            <% if (p.imageUrl) { %>
+              <img src="<%= p.imageUrl %>" alt="Image du post" class="img-fluid mb-3" style="max-width: 100%; border-radius: 8px; max-height: 400px; object-fit: cover;">
+            <% } %>
 
             <!-- Score debug si activé -->
             <% if (debug && p.debugScore && p.debugScore.scoreTotal !== undefined) { %>

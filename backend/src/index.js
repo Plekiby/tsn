@@ -32,13 +32,15 @@ app.use(ajouterCompteurMessagesNonLus);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const baseDir = path.join(__dirname, ".."); // Go up one level to backend/
 
 // EJS
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
 // Static
-app.use("/public", express.static(path.join(__dirname, "public")));
+app.use("/public", express.static(path.join(baseDir, "public")));
+app.use("/uploads", express.static(path.join(baseDir, "public", "uploads")));
 
 // Routes
 app.use("/auth", routesAuth);

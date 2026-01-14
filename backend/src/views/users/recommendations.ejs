@@ -53,7 +53,7 @@
             <div class="card text-center border-success shadow-sm">
               <div class="card-body">
                 <h3 class="text-success mb-0">
-                  <%= reco.filter(r => r.commonCount > 0).length %>
+                  <%= reco.filter(r => r.nbInteretsCommuns > 0).length %>
                 </h3>
                 <small class="text-muted">Intérêts communs</small>
               </div>
@@ -63,7 +63,7 @@
             <div class="card text-center border-warning shadow-sm">
               <div class="card-body">
                 <h3 class="text-warning mb-0">
-                  <%= reco.filter(r => r.strongMutuals > 0).length %>
+                  <%= reco.filter(r => r.nbConnexionsMutuelles > 0).length %>
                 </h3>
                 <small class="text-muted">Mutuals en commun</small>
               </div>
@@ -111,48 +111,54 @@
                       <i class="bi bi-graph-up"></i> Score: <%= Math.round(u.score) %>
                     </span>
 
-                    <% if (u.mutuals > 0) { %>
+                    <% if (u.nbConnexionsMutuelles > 0) { %>
                       <span class="badge bg-info">
-                        <i class="bi bi-people"></i> <%= u.mutuals %>
+                        <i class="bi bi-people"></i> <%= u.nbConnexionsMutuelles %>
                       </span>
                     <% } %>
 
-                    <% if (u.commonCount > 0) { %>
+                    <% if (u.nbInteretsCommuns > 0) { %>
                       <span class="badge bg-success">
-                        <i class="bi bi-tag-fill"></i> <%= u.commonCount %> (<%=u.interestPercentage%>%)
+                        <i class="bi bi-tag-fill"></i> <%= u.nbInteretsCommuns %> (<%= u.pourcentageInterets %>%)
+                      </span>
+                    <% } %>
+
+                    <% if (u.scoreJaccard && u.scoreJaccard > 0) { %>
+                      <span class="badge bg-warning text-dark" title="Jaccard similarity">
+                        <i class="bi bi-percent"></i> <%= Math.round(u.scoreJaccard * 100) %>
                       </span>
                     <% } %>
                   </div>
 
                   <!-- Mutuals -->
-                  <% if (u.mutualNames && u.mutualNames.length) { %>
+                  <% if (u.nomsAmisCommunsAffichage && u.nomsAmisCommunsAffichage.length) { %>
                     <div class="mb-3 pb-3 border-bottom">
                       <small class="text-muted d-block mb-2">
                         <i class="bi bi-arrow-through-heart"></i> <strong>Connexions :</strong>
                       </small>
                       <div class="d-flex flex-wrap gap-1">
-                        <% u.mutualNames.slice(0, 3).forEach(name => { %>
+                        <% u.nomsAmisCommunsAffichage.slice(0, 3).forEach(name => { %>
                           <span class="badge bg-secondary small"><%= name %></span>
                         <% }) %>
-                        <% if (u.mutualNames.length > 3) { %>
-                          <span class="badge bg-light text-dark small">+<%= u.mutualNames.length - 3 %></span>
+                        <% if (u.nomsAmisCommunsAffichage.length > 3) { %>
+                          <span class="badge bg-light text-dark small">+<%= u.nomsAmisCommunsAffichage.length - 3 %></span>
                         <% } %>
                       </div>
                     </div>
                   <% } %>
 
                   <!-- Intérêts communs -->
-                  <% if (u.commonInterests && u.commonInterests.length) { %>
+                  <% if (u.interetsCommuns && u.interetsCommuns.length) { %>
                     <div class="mb-3">
                       <small class="text-muted d-block mb-2">
                         <i class="bi bi-tag-fill"></i> <strong>Intérêts :</strong>
                       </small>
                       <div class="d-flex flex-wrap gap-1">
-                        <% u.commonInterests.slice(0, 4).forEach(interest => { %>
+                        <% u.interetsCommuns.slice(0, 4).forEach(interest => { %>
                           <span class="badge bg-success small"><%= interest %></span>
                         <% }) %>
-                        <% if (u.commonInterests.length > 4) { %>
-                          <span class="badge bg-light text-dark small">+<%= u.commonInterests.length - 4 %></span>
+                        <% if (u.interetsCommuns.length > 4) { %>
+                          <span class="badge bg-light text-dark small">+<%= u.interetsCommuns.length - 4 %></span>
                         <% } %>
                       </div>
                     </div>
@@ -160,7 +166,7 @@
 
                   <!-- Barre de compatibilité -->
                   <%
-                    const compatScore = Math.min(100, u.interestPercentage + (u.strongMutuals * 15));
+                    const compatScore = Math.min(100, u.pourcentageInterets + (u.nbConnexionsMutuelles * 15));
                     const progressColor = compatScore >= 70 ? 'success' : compatScore >= 40 ? 'warning' : 'info';
                   %>
                   <% if (compatScore > 0) { %>
