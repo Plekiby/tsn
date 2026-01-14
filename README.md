@@ -90,25 +90,33 @@ Bonus: 20 pts (sinon 0)
 **Justification:** Renforce la cohésion et pertinence intra-groupe.
 
 
-### 2. **Algorithme FOAF (Friends of Friends)**
-
-Recommande des utilisateurs potentiels :
+### 2. **Algorithme FOAF **
 
 ```javascript
-// Pseudo-code
-FOAF(utilisateur_id):
-  amis_directs = Set des utilisateurs suivis directement
-  candidates = Set vide
-  
-  POUR chaque ami IN amis_directs:
-    amis_de_ami = Set des utilisateurs suivis par ami
-    POUR chaque user IN amis_de_ami:
-      SI user ∉ amis_directs ET user ≠ utilisateur_id:
-        candidates.ajouter(user)
-  
-  RETOURNER candidates TRIÉS par Jaccard(intérêts)
+// Architecture: 
+// 
+// Stratégie en 2 phases:
+// 
+// PHASE 1: FOAF (Friends of Friends à 2 hops)
+// - Récupère les personnes que je suis (1 hop)
+// - Récupère les personnes qu'elles suivent (2 hops)
+// - Exclut: moi-même, personnes que je suis déjà
+//
+// PHASE 2: Scoring des candidats
+// Pour chaque candidat FOAF:
+//   comptesCommuns = nombre de gens que je suis qui suivent aussi ce candidat
+//   comptesMutuels = nombre de ces comptes où je suis AUSSI suivi en retour
+//   
+//   score = (comptesCommuns × 10) + (comptesMutuels × 5) + intérêts + Jaccard
+//
+// PHASE 3: Fallback (pour new users)
+// Si peu de candidats FOAF: cherche par intérêts communs
 
-Complexité: O(n × m) où n=amis directs, m=moyenne amis/personne
+Scoring détaillé:
+- Connexion simple (dans mes comptes en commun): 10 pts
+- Connexion mutuelle (je suis suivi en retour): +5 pts bonus
+- Intérêt commun: 8 pts par intérêt
+- Jaccard similarity: 0-30 pts (score de similarité Jaccard × 30)
 ```
 
 **Exemple pratique:**
@@ -117,12 +125,20 @@ Vous suivez: Alice, Bob
 Alice suit: Charlie, David, vous-même
 Bob suit: Eve, David, Franck
 
-Recommandations FOAF: {Charlie, David, Eve, Franck}
+FOAF Phase 1: {Charlie, David, Eve, Franck}
+
+FOAF Phase 2 - Scoring Charlie:
+- comptesCommuns = 1 (Alice vous suit tous les deux)
+- comptesMutuels = 0 (Alice ne vous suit pas)
+- interetsCommuns = 2 (gaming, tech)
+- jaccardScore = 25
+- TOTAL = (1×10) + (0×5) + (2×8) + 25 = 51 pts
 ```
 
 **Avantages:**
-- Découvertes via réseau fiable (vos amis les connaissent)
+- Recommandations via réseau fiable (vos suivis les connaissent)
 - Crée des ponts entre communautés
+- Distingue connexions simples vs mutuelles
 
 
 ---
@@ -158,18 +174,18 @@ Permet un tri secondaire des recommandations par pertinence d'intérêts.
 
 ```
 User (compte + profil)
-├─ Follow (relations sociales)
+├─ Follow (relations sociales - UNIQUEMENT Follow, pas Friendship)
 ├─ UserBlock (blocages bidirectionnels)
 ├─ UserMute (mutes unidirectionnels)
 ├─ UserInterest (intérêts de l'utilisateur)
 ├─ UserPrivacy (paramètres de confidentialité)
-└─ Post (contenu utilisateur)
+└─ Post (contenu utilisateur + imageUrl)
    ├─ Like (votes positifs)
    └─ Comment (réponses)
 
 Group (communautés)
 ├─ GroupMember (adhésion)
-└─ Post (contenu de groupe)
+└─ Post (contenu de groupe + imageUrl)
 
 Conversation (discussions privées)
 └─ ConversationMember
@@ -201,19 +217,19 @@ View (rendu client)
 ## Fonctionnalités développées
 
 ### Système Social
-- **Suivi/Followers:** Relations unidirectionnelles avec compteurs
+- **Suivi/Followers:** Relations unidirectionnelles avec compteurs (utilise UNIQUEMENT Follow, pas Friendship)
 - **Profils:** Bio, avatar, bannière, localisation, date de naissance
 - **Visibilité:** 4 niveaux (PUBLIC, FOLLOWERS, FRIENDS, PRIVATE)
 
 ### Posts et Contenu
-- **Posts personnels:** Avec paramétrage granulaire de visibilité
+- **Posts personnels:** Avec paramétrage granulaire de visibilité + **photo/image optionnelle**
 - **Posts de groupe:** Visibles uniquement aux membres
 - **Likes et commentaires:** Système complet avec compteurs
 - **Feed intelligent:** Tri par score décroissant avec 5 critères
 
-### Système de Recommandations
-- **Feed scoring:** 5 critères 
-- **FOAF** 
+### System de Recommandations
+- **Recommandations utilisateur:** Algorithme FOAF (Follow-Only) avec scoring en 4 dimensions
+- **Scoring:** Comptes en commun (10 pts), mutuels (+5 bonus), intérêts (8 pts), Jaccard (0-30 pts)
 - **Matching d'intérêts:** Via similarité Jaccard
 - **Filtre blocage/mute:** Intégré au feed et messages
 
@@ -270,9 +286,10 @@ Fichier: `backend/tests/algorithmes.test.js`
    - Post faible → 10 pts 
    - Post moyen → 94 pts 
 
-6. **Test FOAF Algorithm** (logique)
-   - Recommandations correctes à 2-hop 
-   - Exclusion amis directs 
+6. **Test FOAF Algorithm (Follow-Only)** (logique)
+   - Recommandations correctes à 2-hop avec scoring
+   - Distinction comptes communs vs mutuels
+   - Exclusion personnes déjà suivies
    - Exclusion self 
 
 ### Validation Fonctionnelle

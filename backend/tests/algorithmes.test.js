@@ -1,37 +1,74 @@
 /**
  * Tests unitaires pour les algorithmes du système de recommandation
  * - Scoring du feed
- * - Algorithme FOAF (Friends of Friends)
+ * - Algorithme FOAF (Follow-Only, sans Friendship)
  * - Similarité Jaccard pour les intérêts
  */
 
-// ===== ALGORITHME DE SCORING DU FEED =====
+// ===== ALGORITHME DE RECOMMANDATIONS (FOAF) =====
 
 /**
- * Calcule le score de relation entre deux utilisateurs
- * Basé sur le type de relation (ami, suivi, inconnu)
+ * Calcule le score d'une recommandation utilisateur
+ * Basé UNIQUEMENT sur la table Follow (pas de Friendship)
+ * 
+ * Scoring:
+ * - Connexion simple (dans mes comptes en commun): 10 pts
+ * - Connexion mutuelle (je suis suivi en retour): 15 pts (+5 bonus)
+ * - Intérêt commun: 8 pts par intérêt
+ * - Jaccard similarity: 0-30 pts
  */
-function calculerScoreRelation(estMutuel, estSuivi) {
-  if (estMutuel) return 100; // Ami mutuel
-  if (estSuivi) return 50;    // Suivi (follow)
-  return 10;                  // Inconnu (PUBLIC)
+function calculerScoreRecommandation(comptesCommuns, comptesMutuels, interetsCommuns, jaccardScore) {
+  let score = 0;
+  
+  // Score des connexions
+  score += comptesCommuns * 10; // 10 pts par compte en commun
+  score += comptesMutuels * 5;  // +5 bonus par compte mutuel
+  
+  // Score des intérêts
+  score += interetsCommuns * 8;
+  
+  // Score Jaccard (0-30)
+  score += jaccardScore;
+  
+  return score;
 }
 
 /**
- * Test du score de relation
+ * Test du scoring de recommandation
  */
-function testScoreRelation() {
-  console.log("=== TEST: Score de Relation ===");
+function testScoreRecommandation() {
+  console.log("=== TEST: Score Recommandation (Follow-Only) ===");
   
   const tests = [
-    { estMutuel: true, estSuivi: true, attendu: 100, label: "Ami mutuel" },
-    { estMutuel: false, estSuivi: true, attendu: 50, label: "Suivi" },
-    { estMutuel: false, estSuivi: false, attendu: 10, label: "Post public" }
+    {
+      comptesCommuns: 2,
+      comptesMutuels: 1,
+      interets: 2,
+      jaccard: 20,
+      attendu: 61, // (2*10) + (1*5) + (2*8) + 20
+      label: "Bonne recommandation"
+    },
+    {
+      comptesCommuns: 3,
+      comptesMutuels: 2,
+      interets: 3,
+      jaccard: 25,
+      attendu: 99, // (3*10) + (2*5) + (3*8) + 25
+      label: "Très bonne recommandation"
+    },
+    {
+      comptesCommuns: 1,
+      comptesMutuels: 0,
+      interets: 0,
+      jaccard: 5,
+      attendu: 15, // (1*10) + (0*5) + (0*8) + 5
+      label: "Recommandation basique"
+    }
   ];
 
   tests.forEach(test => {
-    const resultat = calculerScoreRelation(test.estMutuel, test.estSuivi);
-    const pass = resultat === test.attendu ? "OUI" : "NON";
+    const resultat = calculerScoreRecommandation(test.comptesCommuns, test.comptesMutuels, test.interets, test.jaccard);
+    const pass = resultat === test.attendu ? "✓" : "✗";
     console.log(`${pass} ${test.label}: ${resultat} pts (attendu: ${test.attendu})`);
   });
 }
@@ -39,52 +76,48 @@ function testScoreRelation() {
 // ===== ALGORITHME DE SCORE D'INTÉRÊTS (JACCARD) =====
 
 /**
- * Calcule la similarité Jaccard entre deux ensembles
+ * Calcule la similarité Jaccard entre deux ensembles d'intérêts
  * Jaccard = (intersection) / (union)
- * Chaque intérêt commun = 6 points
+ * Retourne un score 0-30
  */
-function calculerScoreInterets(interetsCommuns, interetsUnion) {
+function calculerScoreJaccard(interetsCommuns, interetsUnion) {
   if (interetsUnion === 0) return 0;
-  const similariteJaccard = interetsCommuns / interetsUnion;
-  return interetsCommuns * 6; // 6 pts par intérêt commun
+  const jaccard = interetsCommuns / interetsUnion;
+  return Math.round(jaccard * 30); // Max 30 pts
 }
 
 /**
- * Test du score d'intérêts avec Jaccard
+ * Test du score Jaccard
  */
-function testScoreInterets() {
-  console.log("\n=== TEST: Score d'Intérêts (Jaccard) ===");
+function testScoreJaccard() {
+  console.log("\n=== TEST: Score Jaccard ===");
   
   const tests = [
     { 
       communs: 3, 
       union: 5, 
-      attendu: 18, 
-      label: "3 intérêts communs / 5 total (Jaccard: 60%)",
-      jaccard: (3/5)
+      jaccard: 60,
+      label: "3 intérêts communs / 5 total (60%)"
     },
     { 
       communs: 0, 
       union: 5, 
-      attendu: 0, 
-      label: "Aucun intérêt commun (Jaccard: 0%)",
-      jaccard: 0
+      jaccard: 0,
+      label: "Aucun intérêt commun (0%)"
     },
     { 
       communs: 5, 
       union: 5, 
-      attendu: 30, 
-      label: "Tous les intérêts en commun (Jaccard: 100%)",
-      jaccard: 1
+      jaccard: 30,
+      label: "Tous les intérêts en commun (100%, max 30 pts)"
     }
   ];
 
   tests.forEach(test => {
-    const resultat = calculerScoreInterets(test.communs, test.union);
-    const jaccard = test.jaccard;
-    const pass = resultat === test.attendu ? "OUI" : "NON";
-    console.log(`${pass} ${test.label}`);
-    console.log(`   Score: ${resultat} pts | Jaccard: ${(jaccard * 100).toFixed(1)}%`);
+    const resultat = calculerScoreJaccard(test.communs, test.union);
+    const esperanceJaccard = (test.communs / test.union * 100).toFixed(1);
+    console.log(`✓ ${test.label}`);
+    console.log(`   Jaccard: ${esperanceJaccard}% → Score: ${resultat} pts`);
   });
 }
 
@@ -220,53 +253,80 @@ function testScoreTotal() {
 // ===== ALGORITHME FOAF (Friends of Friends) =====
 
 /**
- * Implémente l'algorithme FOAF (Friends of Friends)
- * Trouve les amis potentiels à 2 hops de distance
+ * Implémente l'algorithme FOAF (Friends of Friends) 
+ * 
+ * Stratégie:
+ * 1. Phase FOAF: Trouve les gens que mes suivi suivent (à 2 hops)
+ * 2. Score les candidats avec le système de points
+ * 3. Fallback: Si peu de candidats, utilise les intérêts communs
  */
-function foafRecommandations(idUtilisateur, mesamis, amisDeMesAmis) {
-  // Récupérer les amis de mes amis
-  const candidats = new Set();
-  
-  amisDeMesAmis.forEach(ami => {
-    if (!mesamis.has(ami.id) && ami.id !== idUtilisateur) {
-      candidats.add(ami.id);
-    }
-  });
+function foafRecommandations(idUtilisateur, idUtilisateursSuivis, relationsSuiveurs) {
 
-  return Array.from(candidats);
+  
+  const candidats = new Map(); // id -> { comptesCommuns: 0, comptesMutuels: 0 }
+  
+  // Pour chaque personne que je suis
+  idUtilisateursSuivis.forEach(idPersonne => {
+    // Trouver les personnes qui suivent cette personne
+    relationsSuiveurs.forEach(relation => {
+      if (relation.followingId === idPersonne && relation.followerId !== idUtilisateur) {
+        
+        // Ne pas recommander quelqu'un que je suis déjà
+        if (!idUtilisateursSuivis.has(relation.followerId)) {
+          if (!candidats.has(relation.followerId)) {
+            candidats.set(relation.followerId, { comptesCommuns: 0, comptesMutuels: 0 });
+          }
+          
+          const data = candidats.get(relation.followerId);
+          data.comptesCommuns += 1;
+          
+          // Bonus si c'est mutuel
+          if (relation.estMutuel) {
+            data.comptesMutuels += 1;
+          }
+        }
+      }
+    });
+  });
+  
+  return candidats;
 }
 
 /**
- * Test du FOAF
+ * Test du FOAF (Follow-Only)
  */
 function testFOAF() {
-  console.log("\n=== TEST: Algorithme FOAF ===");
+  console.log("\n=== TEST: Algorithme FOAF (Follow-Only) ===");
   
   const idUtilisateur = 1;
-  const mesAmis = new Set([2, 3]); // Je suis ami avec 2 et 3
-  const amisDeMesAmis = [
-    { id: 4 }, // 2 est ami avec 4
-    { id: 5 }, // 2 est ami avec 5
-    { id: 6 }, // 3 est ami avec 6
-    { id: 2 }  // 3 est ami avec 2 (déjà mon ami)
+  const idUtilisateursSuivis = new Set([2, 3, 4]); // Je suis 2, 3, 4
+  
+  const relationsSuiveurs = [
+    // Personnes qui suivent les gens que je suis
+    { followerId: 5, followingId: 2, estMutuel: false }, // 5 suit 2
+    { followerId: 6, followingId: 2, estMutuel: true },  // 6 suit 2 ET je le suis
+    { followerId: 7, followingId: 3, estMutuel: false }, // 7 suit 3
+    { followerId: 5, followingId: 3, estMutuel: true },  // 5 suit aussi 3 ET je le suis
+    { followerId: 8, followingId: 4, estMutuel: false }, // 8 suit 4
   ];
-
-  const recommandations = foafRecommandations(idUtilisateur, mesAmis, amisDeMesAmis);
+  
+  const candidats = foafRecommandations(idUtilisateur, idUtilisateursSuivis, relationsSuiveurs);
   
   console.log(`Pour l'utilisateur ${idUtilisateur}:`);
-  console.log(`   Mes amis: [${Array.from(mesAmis).join(", ")}]`);
-  console.log(`   Recommandations FOAF: [${recommandations.join(", ")}]`);
-  console.log(`   (Amis de mes amis que je ne connais pas encore)`);
+  console.log(`   Personnes que je suis: [${Array.from(idUtilisateursSuivis).join(", ")}]`);
+  console.log(`   Candidats trouvés:`);
+  
+  candidats.forEach((data, idCandidat) => {
+    console.log(`   - Utilisateur ${idCandidat}: ${data.comptesCommuns} comptes en commun, ${data.comptesMutuels} mutuels`);
+  });
 }
 
 // ===== EXECUTION DE TOUS LES TESTS =====
 
-console.log("╔════════════════════════════════════════════════════════════╗");
-console.log("║   TESTS UNITAIRES - ALGORITHMES DE RECOMMANDATION TSN      ║");
-console.log("╚════════════════════════════════════════════════════════════╝");
+console.log("TESTS UNITAIRES - ALGORITHMES DE RECOMMANDATION TSN");
 
-testScoreRelation();
-testScoreInterets();
+testScoreRecommandation();
+testScoreJaccard();
 testScoreFraicheur();
 testScoreEngagement();
 testScoreTotal();
