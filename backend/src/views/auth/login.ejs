@@ -52,6 +52,21 @@
     .link-primary:hover {
       color: var(--primary-dark) !important;
     }
+
+    .alert {
+      animation: slideDown 0.3s ease-out;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
   </style>
 </head>
 <body>
@@ -67,7 +82,10 @@
               <p class="text-muted">TSN - Tailored Social Network</p>
             </div>
 
-            <form method="POST" action="/auth/login">
+            <!-- Conteneur d'alertes -->
+            <div id="alertContainer"></div>
+
+            <form id="loginForm">
               <div class="mb-3">
                 <label for="email" class="form-label">
                   <i class="bi bi-envelope"></i> Email
@@ -119,5 +137,135 @@
 
   <!-- Bootstrap Bundle with Popper -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const loginForm = document.getElementById('loginForm');
+    const alertContainer = document.getElementById('alertContainer');
+
+    console.log('✓ Script login chargé');
+    console.log('Form:', loginForm);
+    console.log('Container:', alertContainer);
+
+    loginForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      console.log('Form soumis');
+
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      alertContainer.innerHTML = '';
+
+      try {
+        const response = await fetch('/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ email, password })
+        });
+
+        console.log('Response status:', response.status);
+
+        if (response.ok) {
+          // Succès - redirige vers /feed
+          window.location.href = '/feed';
+        } else if (response.status === 403) {
+          // Email non vérifié
+          const data = await response.json();
+          console.log('Email non vérifié:', data);
+          const emailForVerification = data.email || email;
+
+          showAlert(
+            `<strong>Email non vérifié</strong><br>
+            Tu dois vérifier ton adresse email avant de te connecter.<br>
+            <small class="text-muted">${emailForVerification}</small>`,
+            'warning',
+            true,
+            emailForVerification
+          );
+        } else if (response.status === 401 || response.status === 400) {
+          // Identifiants incorrects
+          const data = await response.json();
+          console.log('Identifiants incorrects:', data);
+          showAlert(data.erreur || 'Email ou mot de passe incorrect.', 'danger');
+        } else {
+          const data = await response.json();
+          console.log('Autre erreur:', data);
+          showAlert(data.erreur || 'Une erreur est survenue.', 'danger');
+        }
+      } catch (erreur) {
+        console.error('Erreur:', erreur);
+        showAlert('Erreur de connexion. Veuillez vérifier votre connexion internet.', 'danger');
+      }
+    });
+
+    function showAlert(message, type, showResendButton = false, email = null) {
+      const alert = document.createElement('div');
+      alert.className = `alert alert-${type} alert-dismissible fade show`;
+      alert.setAttribute('role', 'alert');
+
+      let html = `
+        <i class="bi bi-exclamation-circle-fill"></i>
+        <strong class="ms-2">${message}</strong>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      `;
+
+      if (showResendButton && email) {
+        html = `
+          <i class="bi bi-exclamation-circle-fill"></i>
+          <div class="ms-4 mt-2">
+            <p>${message}</p>
+            <button type="button" class="btn btn-warning btn-sm" id="resendBtn">
+              <i class="bi bi-arrow-repeat"></i> Renvoyer l'email de vérification
+            </button>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+      }
+
+      alert.innerHTML = html;
+      alertContainer.appendChild(alert);
+
+      if (showResendButton && email) {
+        document.getElementById('resendBtn').addEventListener('click', async function() {
+          await resendVerificationEmail(email);
+        });
+      }
+    }
+
+    async function resendVerificationEmail(email) {
+      const resendBtn = document.getElementById('resendBtn');
+      resendBtn.disabled = true;
+      resendBtn.textContent = '📧 Envoi en cours...';
+
+      try {
+        const response = await fetch('/auth/renvoyer-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ email })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Sauvegarde l'email pour la page de vérification
+          localStorage.setItem('registrationEmail', email);
+          // Redirige vers la page de vérification
+          window.location.href = `/auth/verification-email?email=${encodeURIComponent(email)}`;
+        } else {
+          alert(data.erreur || 'Impossible de renvoyer l\'email.');
+          resendBtn.disabled = false;
+          resendBtn.textContent = '📧 Renvoyer l\'email de vérification';
+        }
+      } catch (erreur) {
+        console.error('Erreur:', erreur);
+        alert('Erreur de connexion.');
+        resendBtn.disabled = false;
+        resendBtn.textContent = '📧 Renvoyer l\'email de vérification';
+      }
+    }
+  </script>
 </body>
 </html>

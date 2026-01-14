@@ -21,6 +21,7 @@ import { routesMessages } from "./messages/messages.routes.js";
 import { routesConfidentialite } from "./privacy/privacy.routes.js";
 import { ajouterCompteurNotificationsNonLues } from "./notifications/unread.middleware.js";
 import { ajouterCompteurMessagesNonLus } from "./messages/unreadMessages.middleware.js";
+import { testerConnectionSMTP } from "./auth/email.service.js";
 
 const app = express();
 app.use(express.urlencoded({ extended: true })); // forms
@@ -59,14 +60,19 @@ app.use(routesLiensInvitationsGroupes);
 
 app.get("/feed", (requete, reponse) => reponse.redirect("/posts/feed"));
 
-// Home redirect
 app.get("/", (requete, reponse) => reponse.redirect("/posts/feed"));
 
 // 404
 app.use((requete, reponse) => reponse.status(404).render("errors/404"));
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Server running on :${port}`));
+app.listen(port, async () => {  
+  try {
+    await testerConnectionSMTP();
+  } catch (erreur) {
+    console.error("Erreur SMTP", erreur.message);
+  }
+});
 
 
 
