@@ -14,7 +14,8 @@ export const routesProfils = express.Router();
 // Configuration multer pour les uploads
 const stockage = multer.diskStorage({
   destination: async (requete, fichier, callback) => {
-    const repertoireUpload = path.join(__dirname, "../public/uploads");
+    // __dirname = backend/src/users/, donc ../../public/uploads = backend/public/uploads/
+    const repertoireUpload = path.join(__dirname, "../../public/uploads");
     try {
       await fs.mkdir(repertoireUpload, { recursive: true });
     } catch {}
@@ -275,16 +276,15 @@ routesProfils.post(
 
       if (requete.files?.avatar && requete.files.avatar[0]) {
         miseAJour.push("avatar = ?");
-        valeurs.push("/public/uploads/" + requete.files.avatar[0].filename);
+        valeurs.push("/uploads/" + requete.files.avatar[0].filename);
       }
 
       if (requete.files?.banner && requete.files.banner[0]) {
         miseAJour.push("banner = ?");
-        valeurs.push("/public/uploads/" + requete.files.banner[0].filename);
+        valeurs.push("/uploads/" + requete.files.banner[0].filename);
       }
 
       if (miseAJour.length > 0) {
-        miseAJour.push("updatedAt = NOW()");
         valeurs.push(idUtilisateur);
         await query(
           `UPDATE User SET ${miseAJour.join(", ")} WHERE id = ?`,
